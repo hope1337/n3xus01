@@ -108,6 +108,8 @@ Chứng minh reboot persistence: khi sẵn sàng, **tự reboot target**, chờ 
 
 Reset dùng uninstaller chính thức của K3s sau khi kiểm tra ownership, phiên bản, cấu hình và fingerprint service/scripts. Không gỡ Tailscale, SSH hay package Ubuntu. Không có ownership marker thì dừng, không xóa. Reset lần hai cũng dừng an toàn vì cluster không còn thuộc quản lý. Nếu cài lần đầu dở dang mà chưa có uninstaller, rerun setup trước. Không tự xóa marker để vượt qua safety checks.
 
+Repo chặn riêng thao tác upstream xóa advertised routes Tailscale, để reset giữ cấu hình Tailscale hiện tại.
+
 ## Kiểm tra repo và cấu trúc
 
 ```bash

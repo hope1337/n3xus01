@@ -12,5 +12,6 @@
 - Owner marker root-only nằm tại `/var/lib/personal-compute-v1/owner.json`. Máy mới có K3s files, kubeadm/RKE2/MicroK8s hoặc service Kubernetes thì dừng trước khi cài. Máy thuộc repo mà đổi version/IP/name/config hoặc service/scripts thì dừng để tránh phá cấu hình. Marker không phải backup hoặc cơ chế chống người có root sửa máy.
 - systemd drop-in chờ `tailscale wait`, service restart khi lỗi và enabled khi boot. Reboot tự phục hồi nếu tailnet còn đăng nhập, máy boot Ubuntu và mạng hoạt động. Key Tailscale hết hạn, boot Windows, mất Internet hoặc ngủ máy vẫn làm compute node offline.
 - Dùng installer/uninstaller K3s chính thức để không tự xây vòng đời K3s bằng shell. Reset có phạm vi node-wide, dừng Pod và dọn network rules của K3s; mất cả local-path volumes. Chỉ cho phép khi có owner đúng và không thấy Kubernetes khác. Không rollback toàn bộ máy về trạng thái package ban đầu.
+- Script `k3s-killall.sh` do installer upstream sinh có dòng `tailscale set --advertise-routes=`. Ansible thay **chỉ dòng này** bằng một no-op, kiểm tra rồi lưu fingerprint, để uninstaller không đổi subnet routes Tailscale đã có. Phần dọn K3s còn lại giữ nguyên. [Nguồn installer đã pin](https://raw.githubusercontent.com/k3s-io/k3s/v1.36.4%2Bk3s1/install.sh).
 
 GPU RTX 4090 chưa được đụng đến. Không cài driver, CUDA, NVIDIA Container Toolkit hoặc GPU Operator.

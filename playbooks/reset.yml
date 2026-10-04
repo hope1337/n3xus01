@@ -38,10 +38,21 @@
           - reset_script.stat.exists
           - reset_script.stat.isreg
         fail_msg: "Uninstaller missing. Rerun setup to finish a partial installation, then reset."
+    - name: Inspect Tailscale protection before destructive cleanup
+      ansible.builtin.slurp:
+        src: /usr/local/bin/k3s-killall.sh
+      register: reset_cleanup_script
+    - name: Refuse cleanup that would change Tailscale routes
+      ansible.builtin.assert:
+        that:
+          - "(reset_cleanup_script.content | b64decode) is not regex('(?m)^[ \\t]*tailscale set --advertise-routes=')"
+        fail_msg: "Unsafe Tailscale cleanup detected. Rerun setup to finish the safety guard before reset."
     - name: Uninstall K3s using its official uninstaller
       ansible.builtin.command:
         argv: [/bin/sh, /usr/local/bin/k3s-uninstall.sh]
       changed_when: true
+      environment:
+        K3S_DATA_DIR: /var/lib/rancher/k3s
     - name: Remove the repository's fixed systemd drop-in after uninstall
       ansible.builtin.file:
         path: /etc/systemd/system/k3s.service.d/10-tailscale.conf

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import configparser
 from pathlib import Path
 import re
 import subprocess
@@ -70,6 +71,14 @@ def main():
         assert plays[0]["become"] is True
         assert plays[0]["any_errors_fatal"] is True
 
+    ansible_config = configparser.ConfigParser()
+    ansible_config.read(ROOT / "ansible/ansible.cfg", encoding="utf-8")
+    # Ansible's relative config paths are based on the config file directory,
+    # not the directory where the wrapper happens to be invoked.
+    for key, expected in (("roles_path", "roles"), ("inventory", "inventory/hosts.yml"), ("local_tmp", ".cluster/ansible-tmp")):
+        resolved = (ROOT / "ansible" / ansible_config["defaults"][key]).resolve()
+        assert resolved == (ROOT / expected).resolve(), f"Misresolved Ansible {key}: {resolved}"
+
     defaults = load("roles/k3s_server/defaults/main.yml")
     assert re.fullmatch(r"v\d+\.\d+\.\d+\+k3s\d+", defaults["k3s_version"])
     env = Environment(undefined=StrictUndefined)
@@ -123,6 +132,16 @@ def main():
     for routes, owner, ok in route_cases:
         result = subprocess.run([sys.executable, "-c", validator, json.dumps(routes), owner], capture_output=True, text=True)
         assert (result.returncode == 0) == ok, (routes, owner, result.stderr)
+
+    # The upstream cleanup script must not clear a user's Tailscale subnet routes.
+    install_tasks = load("roles/k3s_server/tasks/install.yml")
+    guard = next(t["ansible.builtin.replace"] for t in install_tasks if "ansible.builtin.replace" in t)
+    upstream_fragment = 'if [ -n "$(command -v tailscale)" ]; then\n        tailscale set --advertise-routes=\n    fi\n'
+    guarded = re.sub(guard["regexp"], guard["replace"], upstream_fragment, flags=re.MULTILINE)
+    assert 'tailscale set --advertise-routes=' not in guarded
+    assert 'preserve existing Tailscale routes' in guarded
+    assert guarded.startswith('if [ -n "$(command -v tailscale)" ]; then\n')
+    assert re.sub(guard["regexp"], guard["replace"], guarded, flags=re.MULTILINE) == guarded
 
     ignored = (ROOT / ".gitignore").read_text(encoding="utf-8")
     for entry in ("/inventory/hosts.yml", "/.cluster/", "*.key", "*.pem"):

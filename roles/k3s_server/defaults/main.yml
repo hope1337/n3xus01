@@ -4,11 +4,16 @@ cluster_owner_dir: /var/lib/personal-compute-v1
 cluster_owner_file: /var/lib/personal-compute-v1/owner.json
 cluster_kubeconfig_path: "{{ playbook_dir }}/../.cluster/kubeconfig.yaml"
 cluster_foreign_paths:
+  # The official systemd unit also reads these optional environment files.
+  - /etc/default/k3s
+  - /etc/sysconfig/k3s
   - /etc/kubernetes
   - /etc/rancher/rke2
   - /var/lib/rancher/rke2
   - /var/snap/microk8s
 cluster_install_paths:
+  - /var/lib/cni
+  - /run/flannel
   - /usr/local/bin/k3s
   - /usr/local/bin/k3s-uninstall.sh
   - /usr/local/bin/k3s-killall.sh

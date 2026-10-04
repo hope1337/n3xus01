@@ -62,7 +62,7 @@ ansible_run() {
   inventory
   local args=(-i "$ROOT/inventory/hosts.yml")
   if [[ "$prompt" == yes ]]; then args+=(--ask-become-pass); fi
-  # Anchoring cwd also makes relative paths in ansible.cfg independent of cwd.
+  # Keep user paths and all commands independent of the caller's cwd.
   (cd "$ROOT" && ansible-playbook "${args[@]}" "$ROOT/playbooks/$playbook" "$@")
 }
 k() {

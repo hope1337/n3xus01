@@ -6,8 +6,9 @@ Ngày: 2026-10-04. Môi trường: Windows; Git Bash và Python có sẵn, WSL/L
 
 - Bash syntax cho `cluster` và `tests/test_wrapper.sh` bằng Git Bash.
 - Regression tests offline cho wrapper, sử dụng fake Ansible/kubectl/curl trong một thư mục tạm riêng (không dùng cluster thật).
-- Python static checks: YAML với duplicate-key detection, Jinja render, endpoint Tailscale, secrets handling, manifest nội bộ, route overlap với cả node fresh và node đã chạy K3s, command/path consistency.
+- Python static checks: YAML với duplicate-key detection, Jinja render, endpoint Tailscale, secrets handling, manifest nội bộ, route overlap với cả node fresh và node đã chạy K3s, guard giữ Tailscale routes khi uninstall, command/path consistency.
 - Git whitespace/diff checks và kiểm tra ignore inventory, kubeconfig, key/token.
+- Chạy lại static checks và wrapper tests trên source xuất từ Git, chứng minh các file cần thiết có trong bản clone, không chỉ nằm trong workspace.
 
 **Chưa chạy Ansible `--syntax-check` bằng Linux controller, provisioning qua SSH, workload thật hay reboot thật** tại môi trường Windows này. `./cluster check` và GitHub workflow đã chuẩn bị sẵn để chạy native Ansible syntax trên Ubuntu; workflow không có nghĩa CI đã được chạy. Làm `docs/acceptance.md` để xác nhận flow đầu-cuối trên máy của bạn.
 

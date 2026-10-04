@@ -134,6 +134,12 @@
     fail_msg: "Existing {{ item }} detected. Use a clean target."
   loop: "{{ cluster_foreign_services }}"
 
+- name: Refuse additional custom-named K3s services
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.services.keys() | select('match', '^k3s.*\.service$') | difference(['k3s.service']) | length == 0
+    fail_msg: "Other K3s services exist; the official uninstaller is node-wide. Use a clean target."
+
 - name: Inspect K3s paths before claiming a fresh machine
   ansible.builtin.stat:
     path: "{{ item }}"

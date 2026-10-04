@@ -66,6 +66,23 @@
     K3S_TOKEN_FILE: ""
   when: not cluster_unit.stat.exists
 
+- name: Preserve existing Tailscale routes during future K3s uninstall
+  ansible.builtin.replace:
+    path: /usr/local/bin/k3s-killall.sh
+    regexp: '^([ \t]*)tailscale set --advertise-routes=[ \t]*$'
+    replace: '\1: # personal-compute-v1: preserve existing Tailscale routes'
+
+- name: Read generated cleanup script to verify the Tailscale safety guard
+  ansible.builtin.slurp:
+    src: /usr/local/bin/k3s-killall.sh
+  register: cluster_cleanup_script
+
+- name: Require Tailscale route cleanup to be disabled
+  ansible.builtin.assert:
+    that:
+      - "(cluster_cleanup_script.content | b64decode) is not regex('(?m)^[ \\t]*tailscale set --advertise-routes=')"
+    fail_msg: "Refusing unsafe uninstall script: it would modify existing Tailscale routes."
+
 - name: Create K3s systemd drop-in directory
   ansible.builtin.file:
     path: /etc/systemd/system/k3s.service.d
