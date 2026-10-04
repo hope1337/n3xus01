@@ -54,6 +54,16 @@ def main():
     assert imports == ["preflight.yml", "install.yml", "kubeconfig.yml"]
     for name in imports:
         assert (ROOT / "roles/k3s_server/tasks" / name).is_file()
+    # Ensure a broad secret ignore pattern cannot omit a required playbook task
+    # from a clone, even when that task happens to exist in the current workspace.
+    if (ROOT / ".git").exists():
+        tracked = subprocess.run(
+            ["git", "-c", f"safe.directory={ROOT.as_posix()}", "-C", str(ROOT), "ls-files"],
+            check=True, capture_output=True, text=True,
+        ).stdout.splitlines()
+        for name in imports:
+            required = f"roles/k3s_server/tasks/{name}"
+            assert required in tracked, f"Required Ansible source is not tracked in Git: {required}"
     for playbook in ("setup", "reset"):
         plays = load(f"playbooks/{playbook}.yml")
         assert plays[0]["hosts"] == "k3s_servers"

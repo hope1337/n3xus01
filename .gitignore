@@ -14,5 +14,7 @@ __pycache__/
 id_rsa*
 id_ed25519*
 kubeconfig*
+# This is Ansible source code, not a generated kubeconfig/credential file.
+!roles/k3s_server/tasks/kubeconfig.yml
 *token*
 *authkey*
