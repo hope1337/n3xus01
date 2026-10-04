@@ -1,0 +1,16 @@
+# Các lựa chọn V1
+
+- Một server K3s dùng SQLite mặc định và agent tích hợp; server schedulable, không thêm taint control-plane.
+- Cố định K3s `v1.36.4+k3s1`; tải installer từ cùng release tag, installer chính thức xác minh SHA256 của binary. Không dùng channel `latest`, không nâng phiên bản tự động. URL tag vẫn dựa vào HTTPS/GitHub, không phải cơ chế xác thực supply chain độc lập.
+- API `6443` bind đúng IPv4 Tailscale, advertise/node IP cũng dùng IP đó; TLS SAN có IP đó. Kubeconfig laptop dùng IP Tailscale, không tắt TLS verification.
+- Kubelet bind IP Tailscale, read-only port bị tắt; kube-proxy chỉ phục vụ NodePort trên IP Tailscale nếu sau này người dùng tạo NodePort. V1 không tạo NodePort. Flannel chọn `tailscale0`; không dùng tính năng K3s tự join VPN.
+- API vẫn có thể được các máy khác được tailnet policy cho phép kết nối. Kubeconfig là quyền **cluster-admin**; không share, không upload và không dùng `git add -f` với state/inventory. `.gitignore` không ngăn người dùng force-add hoặc paste secret vào file khác.
+- `.cluster/` có quyền directory `0700`, kubeconfig `0600` trên filesystem Linux. Không vận hành từ NTFS mount nếu không hiểu permissions. `setup` có thể lấy lại kubeconfig khi bản laptop hết hạn; không tự đổi kubeconfig chung. Ansible `slurp`/export credential dùng `no_log: true`.
+- Repo không sửa UFW/firewalld, policy Tailscale, SSH daemon, swap, sysctl thủ công, DNS hay port forwarding của router. **K3s/CNI vẫn tạo network interfaces, routes, sysctls/iptables cần thiết để Kubernetes hoạt động**; đây không phải thao tác không tác động network. Nếu target có firewall/VPN phức tạp, dùng máy/VM sạch cho lần đầu.
+- CNI/Flannel có các cổng nội bộ riêng; chọn interface không thay cho firewall đối với mọi socket nội bộ. Không mở `8472/UDP`, kubelet hoặc Pod CIDR ra Internet. Repo không cung cấp public ingress. Máy nằm sau NAT không forward port là target đơn giản nhất; không coi V1 là hardening đầy đủ cho public VPS.
+- Pod/Service CIDR mặc định là `10.42.0.0/16`, `10.43.0.0/16`. Preflight đọc routes ở tất cả bảng IPv4 và từ chối overlap; không tự sửa route. Trên node đã quản lý, route `cni0`/`flannel.1` của K3s được bỏ qua để rerun sau reboot.
+- Owner marker root-only nằm tại `/var/lib/personal-compute-v1/owner.json`. Máy mới có K3s files, kubeadm/RKE2/MicroK8s hoặc service Kubernetes thì dừng trước khi cài. Máy thuộc repo mà đổi version/IP/name/config hoặc service/scripts thì dừng để tránh phá cấu hình. Marker không phải backup hoặc cơ chế chống người có root sửa máy.
+- systemd drop-in chờ `tailscale wait`, service restart khi lỗi và enabled khi boot. Reboot tự phục hồi nếu tailnet còn đăng nhập, máy boot Ubuntu và mạng hoạt động. Key Tailscale hết hạn, boot Windows, mất Internet hoặc ngủ máy vẫn làm compute node offline.
+- Dùng installer/uninstaller K3s chính thức để không tự xây vòng đời K3s bằng shell. Reset có phạm vi node-wide, dừng Pod và dọn network rules của K3s; mất cả local-path volumes. Chỉ cho phép khi có owner đúng và không thấy Kubernetes khác. Không rollback toàn bộ máy về trạng thái package ban đầu.
+
+GPU RTX 4090 chưa được đụng đến. Không cài driver, CUDA, NVIDIA Container Toolkit hoặc GPU Operator.

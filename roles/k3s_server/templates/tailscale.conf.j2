@@ -1,0 +1,9 @@
+# Wait for Tailscale after boot; transient failure is retried by K3s systemd.
+[Unit]
+Wants=network-online.target tailscaled.service
+After=network-online.target tailscaled.service
+
+[Service]
+ExecStartPre=/usr/bin/tailscale wait --timeout=60s
+Restart=always
+RestartSec=5s

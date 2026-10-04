@@ -1,0 +1,31 @@
+- name: Inspect managed artifact manifest
+  ansible.builtin.stat:
+    path: "{{ cluster_owner_dir }}/artifacts.json"
+  register: cluster_manifest_stat
+
+- name: Read managed artifact manifest
+  ansible.builtin.slurp:
+    src: "{{ cluster_owner_dir }}/artifacts.json"
+  register: cluster_manifest_raw
+  when: cluster_manifest_stat.stat.exists
+
+- name: Check fingerprints of previously installed service and uninstall scripts
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  loop: "{{ cluster_managed_artifacts }}"
+  register: cluster_integrity_stats
+  when: cluster_manifest_stat.stat.exists
+
+- name: Refuse changed managed service or uninstall scripts
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg | default(false)
+      - not (item.stat.islnk | default(false))
+      - item.stat.checksum | default('missing') == (cluster_manifest_raw.content | b64decode | from_json)[item.item]
+    fail_msg: "{{ item.item }} changed/missing since setup. Refusing to overwrite or uninstall; inspect manually."
+  loop: "{{ cluster_integrity_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: cluster_manifest_stat.stat.exists

@@ -1,0 +1,18 @@
+# Managed by personal-compute-v1. Do not edit in place.
+node-name: {{ cluster_node_name | to_json }}
+node-ip: {{ cluster_tailscale_ip | to_json }}
+bind-address: {{ cluster_tailscale_ip | to_json }}
+advertise-address: {{ cluster_tailscale_ip | to_json }}
+tls-san:
+  - {{ cluster_tailscale_ip | to_json }}
+flannel-iface: tailscale0
+write-kubeconfig-mode: "0600"
+disable:
+  - traefik
+  - servicelb
+  - metrics-server
+kubelet-arg:
+  - "address={{ cluster_tailscale_ip }}"
+  - "read-only-port=0"
+kube-proxy-arg:
+  - "nodeport-addresses={{ cluster_tailscale_ip }}/32"

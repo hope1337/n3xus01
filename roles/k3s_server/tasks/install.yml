@@ -1,0 +1,133 @@
+- name: Create root-only ownership directory after all preflight checks
+  ansible.builtin.file:
+    path: "{{ cluster_owner_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Claim this clean machine before installation (also permits failed-install retry)
+  ansible.builtin.copy:
+    dest: "{{ cluster_owner_file }}"
+    content: "{{ cluster_expected_owner | to_nice_json }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Install minimal Ubuntu prerequisites
+  ansible.builtin.apt:
+    name: [ca-certificates, curl, iptables]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create private K3s configuration directory
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Write Tailscale-only K3s configuration
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/k3s/config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  register: cluster_config_written
+
+- name: Inspect K3s systemd unit
+  ansible.builtin.stat:
+    path: /etc/systemd/system/k3s.service
+  register: cluster_unit
+
+- name: Download official installer from the pinned K3s release tag
+  ansible.builtin.get_url:
+    url: "https://raw.githubusercontent.com/k3s-io/k3s/{{ k3s_version | urlencode }}/install.sh"
+    dest: "{{ cluster_owner_dir }}/install-k3s.sh"
+    owner: root
+    group: root
+    mode: "0600"
+  when: not cluster_unit.stat.exists
+
+- name: Run official installer (pinned binary with upstream SHA256 verification)
+  ansible.builtin.command:
+    argv: [/bin/sh, "{{ cluster_owner_dir }}/install-k3s.sh", server]
+    creates: /etc/systemd/system/k3s.service
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+    INSTALL_K3S_SKIP_START: "true"
+    INSTALL_K3S_SYMLINK: skip
+    INSTALL_K3S_BIN_DIR: /usr/local/bin
+    K3S_URL: ""
+    K3S_TOKEN: ""
+    K3S_TOKEN_FILE: ""
+  when: not cluster_unit.stat.exists
+
+- name: Create K3s systemd drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/k3s.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Make K3s wait for Tailscale on every boot
+  ansible.builtin.template:
+    src: tailscale.conf.j2
+    dest: /etc/systemd/system/k3s.service.d/10-tailscale.conf
+    owner: root
+    group: root
+    mode: "0644"
+  register: cluster_dropin_written
+
+- name: Enable K3s and start it (restart only if managed configuration changed)
+  ansible.builtin.systemd_service:
+    name: k3s
+    enabled: true
+    daemon_reload: true
+    state: "{{ 'restarted' if (cluster_config_written.changed or cluster_dropin_written.changed) else 'started' }}"
+
+- name: Wait for API and first-node readiness through the Tailscale endpoint
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - "--server=https://{{ cluster_tailscale_ip }}:6443"
+      - --kubeconfig=/etc/rancher/k3s/k3s.yaml
+      - --request-timeout=10s
+      - get
+      - node
+      - "{{ cluster_node_name }}"
+      - '-o=jsonpath={.status.conditions[?(@.type=="Ready")].status}'
+  register: cluster_ready
+  changed_when: false
+  retries: 36
+  delay: 5
+  until: cluster_ready.rc == 0 and cluster_ready.stdout == 'True'
+
+- name: Check that K3s is enabled for subsequent reboots
+  ansible.builtin.command:
+    argv: [systemctl, is-enabled, k3s]
+  register: cluster_enabled
+  changed_when: false
+  failed_when: cluster_enabled.stdout != 'enabled'
+
+- name: Fingerprint the installed service and official uninstall scripts
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  loop: "{{ cluster_managed_artifacts }}"
+  register: cluster_artifact_stats
+
+- name: Record managed artifact fingerprints for safe reruns and resets
+  ansible.builtin.copy:
+    dest: "{{ cluster_owner_dir }}/artifacts.json"
+    content: >-
+      {{ dict(cluster_artifact_stats.results | map(attribute='item') |
+         zip(cluster_artifact_stats.results | map(attribute='stat.checksum'))) | to_nice_json }}
+    owner: root
+    group: root
+    mode: "0600"

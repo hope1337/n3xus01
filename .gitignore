@@ -1,0 +1,18 @@
+# Local inventory and credentials must never enter Git.
+/inventory/hosts.yml
+/.cluster/
+/.venv/
+/.cache/
+__pycache__/
+*.pyc
+*.retry
+*.log
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+kubeconfig*
+*token*
+*authkey*

@@ -1,0 +1,19 @@
+- name: Provision the first single-node K3s server
+  hosts: k3s_servers
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Require precisely one first-node target
+      ansible.builtin.assert:
+        that:
+          - groups['k3s_servers'] | length == 1
+          - inventory_hostname == 'first-node'
+          - ansible_play_hosts_all | length == 1
+          - ansible_host is defined
+          - ansible_user is defined
+          - "'CHANGE_ME' not in ansible_host"
+          - "'CHANGE_ME' not in ansible_user"
+        fail_msg: "V1 requires exactly one host named first-node. Edit inventory/hosts.yml."
+  roles:
+    - k3s_server

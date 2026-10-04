@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: personal-compute-smoke
+  labels:
+    app.kubernetes.io/managed-by: personal-compute-v1
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: personal-compute-smoke
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: personal-compute-smoke
+  template:
+    metadata:
+      labels:
+        app: personal-compute-smoke
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.28.0-alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: personal-compute-smoke
+spec:
+  type: ClusterIP
+  selector:
+    app: personal-compute-smoke
+  ports:
+    - port: 80
+      targetPort: 80

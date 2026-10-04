@@ -1,0 +1,11 @@
+all:
+  children:
+    k3s_servers:
+      hosts:
+        first-node:
+          # Change these TWO values. Hostname must resolve to this machine's
+          # Tailscale IPv4 address; a 100.x.y.z Tailscale IP also works.
+          ansible_host: CHANGE_ME_TAILSCALE_HOST_OR_IP
+          ansible_user: CHANGE_ME_UBUNTU_USER
+          # Optional: only if SSH does not already select the right key.
+          # ansible_ssh_private_key_file: ~/.ssh/id_ed25519

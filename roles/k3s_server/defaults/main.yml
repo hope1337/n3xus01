@@ -1,0 +1,33 @@
+k3s_version: v1.36.4+k3s1
+cluster_node_name: first-node
+cluster_owner_dir: /var/lib/personal-compute-v1
+cluster_owner_file: /var/lib/personal-compute-v1/owner.json
+cluster_kubeconfig_path: "{{ playbook_dir }}/../.cluster/kubeconfig.yaml"
+cluster_foreign_paths:
+  - /etc/kubernetes
+  - /etc/rancher/rke2
+  - /var/lib/rancher/rke2
+  - /var/snap/microk8s
+cluster_install_paths:
+  - /usr/local/bin/k3s
+  - /usr/local/bin/k3s-uninstall.sh
+  - /usr/local/bin/k3s-killall.sh
+  - /etc/rancher/k3s
+  - /var/lib/rancher/k3s
+  - /var/lib/kubelet
+  - /etc/systemd/system/k3s.service
+  - /etc/systemd/system/k3s.service.env
+  - /etc/systemd/system/k3s.service.d
+  - /etc/systemd/system/k3s-agent.service
+cluster_foreign_services:
+  - kubelet.service
+  - k3s-agent.service
+  - rke2-server.service
+  - rke2-agent.service
+  - snap.microk8s.daemon-kubelite.service
+cluster_managed_artifacts:
+  - /etc/systemd/system/k3s.service
+  - /etc/systemd/system/k3s.service.env
+  - /etc/systemd/system/k3s.service.d/10-tailscale.conf
+  - /usr/local/bin/k3s-uninstall.sh
+  - /usr/local/bin/k3s-killall.sh
