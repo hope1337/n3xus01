@@ -1,11 +1,15 @@
+# Static-check fixture only. Real inventory is generated from devices.yml.
 all:
+  vars:
+    cluster_id: 0123456789abcdef0123456789abcdef
+    cluster_server_ip: 100.101.102.103
   children:
-    k3s_servers:
+    k3s_nodes:
       hosts:
-        first-node:
-          # Change these TWO values. Hostname must resolve to this machine's
-          # Tailscale IPv4 address; a 100.x.y.z Tailscale IP also works.
-          ansible_host: CHANGE_ME_TAILSCALE_HOST_OR_IP
-          ansible_user: CHANGE_ME_UBUNTU_USER
-          # Optional: only if SSH does not already select the right key.
-          # ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+        example-device:
+          ansible_host: 100.101.102.103
+          ansible_user: exampleuser
+          cluster_node_name: example-device
+          cluster_role: server
+          cluster_gpu: false
+          cluster_data_root: /srv/personal-compute/data

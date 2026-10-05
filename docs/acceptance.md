@@ -1,23 +1,17 @@
 # Kiểm chứng trên máy thật
 
-Các static checks không chứng minh Ubuntu, Tailscale, firewall hoặc reboot thật đã hoạt động. Chạy checklist này khi đã khai báo target:
+Thay entry point bằng `.\cluster.ps1` trên Windows. Không có static test nào thay thế được checklist này.
 
-1. `./cluster check` — PASS, không kết nối target.
-2. `./cluster setup first-node` — target `first-node` Ready, laptop `kubectl` thấy đúng IP Tailscale.
-3. `./cluster status` — `/readyz` trả `ok`, node Ready.
-4. `./cluster test` — Pod Ready, HTTP 200 và đúng trang nginx. Service là ClusterIP, không external IP.
-5. Ghi lại UID: `./cluster kubectl get node first-node -o jsonpath='{.metadata.uid}'`.
-6. `./cluster setup first-node` lần hai — không đổi config/service, không restart K3s hay tạo cluster/node mới. Ansible `copy` kubeconfig có thể changed nếu K3s cập nhật certificate; readiness/reads không changed. UID vẫn như bước 5.
-7. Tự reboot target khi chấp nhận downtime, ví dụ `ssh USER@TAILSCALE_HOST_OR_IP 'sudo reboot'`. Chờ Tailscale/SSH hoạt động lại.
-8. **Không chạy setup.** `./cluster status` và `./cluster test` — vẫn PASS, UID như cũ. Deployment có thể tạo lại Pod nhưng cluster/node không được tạo lại.
-9. `./cluster test --cleanup` — chỉ dọn test; `./cluster status` vẫn thấy cluster.
+1. `./cluster setup` — host sẵn sàng, chưa kết nối device.
+2. `./cluster add-device home-4090 --address IP --user USER --gpu` — ghi config, provisioning. Driver mới cần reboot thì làm theo thông báo và rerun.
+3. `./cluster check` — node Ready, CPU/network test PASS, CUDA benchmark PASS.
+4. Rerun `./cluster add-device home-4090` — không đổi cluster/node, không reinstall driver, config/service unchanged thì không restart K3s.
+5. `./cluster run home-4090 --image busybox:1.37.0 -- sh -c 'echo persistent > /data/results/proof.txt'` — ghi file trên device bằng UID của bạn. `wait JOB` hoàn thành.
+6. Mở agent và yêu cầu đọc AGENTS.md rồi chạy `test --gpu home-4090`, theo dõi log, báo kết quả.
+7. Khi chấp nhận downtime, tự reboot device. Không chạy setup lại; `status` và `check` vẫn PASS, proof.txt vẫn còn.
+8. Thêm lab worker, `check` kiểm tra HTTP/DNS qua Pod network từ worker tới nginx trên server. GPU worker dùng --gpu và CUDA test nếu có card.
+9. Trên host OS khác, dùng cùng devices.yml rồi rerun add-device server/worker để lấy quyền truy cập và metadata local, `check` PASS. Không copy private key/credential vào Git.
 
-Chỉ nếu muốn thử lại từ đầu và chấp nhận mất **mọi workload/local PV data**:
+Chỉ thử reset khi chấp nhận mất workloads/K3s local PV: `reset WORKER --yes-delete-cluster` trước, rồi server. Kiểm tra data_root còn nguyên, setup lại được, worker rejoin không node-password mismatch.
 
-```bash
-./cluster reset first-node --yes-delete-cluster
-./cluster setup first-node
-./cluster test
-```
-
-Sau reset/setup mới, node UID sẽ đổi. Reset không tự reboot, gỡ Tailscale hoặc sửa SSH.
+No HA/failover/backup. Máy server hỏng thì cần sửa/dựng lại; test này không chứng minh tự failover.

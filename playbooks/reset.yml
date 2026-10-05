@@ -1,76 +1,58 @@
-- name: Explicitly uninstall only the repository-owned first-node cluster
-  hosts: k3s_servers
+- name: Explicitly uninstall only the selected owned device, preserving separate data directories
+  hosts: k3s_nodes
   become: true
   gather_facts: true
   any_errors_fatal: true
   vars_files:
-    - ../roles/k3s_server/defaults/main.yml
+    - ../roles/k3s_node/defaults/main.yml
+  vars:
+    cluster_reset_mode: true
   pre_tasks:
-    - name: Require explicit destructive confirmation and one target
+    - name: Require explicit destructive confirmation and a single selected device
       ansible.builtin.assert:
         that:
           - cluster_confirm_reset | default(false) | bool
-          - groups['k3s_servers'] | length == 1
-          - inventory_hostname == 'first-node'
           - ansible_play_hosts_all | length == 1
-        fail_msg: "Reset requires one first-node and explicit cluster_confirm_reset=true."
-    - name: Inspect owner marker before considering deletion
+          - cluster_role in ['server', 'worker']
+          - cluster_role != 'server' or groups['k3s_nodes'] | length == 1
+        fail_msg: "Reset is explicit and node-wide. Reset registered workers before the server."
+    - name: Inspect owner marker before deletion
       ansible.builtin.stat:
         path: "{{ cluster_owner_file }}"
       register: reset_owner_stat
-    - name: Refuse to uninstall an unowned or already reset target
+    - name: Refuse an unowned or already-reset device
       ansible.builtin.assert:
         that:
           - reset_owner_stat.stat.exists
-        fail_msg: "No ownership marker. Nothing will be removed. Do not reset clusters installed elsewhere."
+        fail_msg: "No owner marker. Nothing will be removed."
   tasks:
-    - name: Recheck ownership, identity, config, and absence of other Kubernetes
+    - name: Recheck ownership, configuration and artifact integrity (not GPU installation)
       ansible.builtin.include_role:
-        name: k3s_server
+        name: k3s_node
         tasks_from: preflight
-    - name: Inspect official uninstall script
-      ansible.builtin.stat:
-        path: /usr/local/bin/k3s-uninstall.sh
-      register: reset_script
-    - name: Require the owned installation to have its uninstaller
-      ansible.builtin.assert:
-        that:
-          - reset_script.stat.exists
-          - reset_script.stat.isreg
-        fail_msg: "Uninstaller missing. Rerun setup to finish a partial installation, then reset."
-    - name: Inspect Tailscale protection before destructive cleanup
+    - name: Inspect Tailscale protection before cleanup
       ansible.builtin.slurp:
         src: /usr/local/bin/k3s-killall.sh
       register: reset_cleanup_script
-    - name: Refuse cleanup that would change Tailscale routes
+    - name: Refuse cleanup that changes Tailscale routes
       ansible.builtin.assert:
         that:
           - "(reset_cleanup_script.content | b64decode) is not regex('(?m)^[ \\t]*tailscale set --advertise-routes=')"
-        fail_msg: "Unsafe Tailscale cleanup detected. Rerun setup to finish the safety guard before reset."
-    - name: Uninstall K3s using its official uninstaller
+        fail_msg: "Unsafe cleanup script; rerun setup to finish the guard first."
+    - name: Uninstall K3s using the fingerprinted official uninstaller
       ansible.builtin.command:
-        argv: [/bin/sh, /usr/local/bin/k3s-uninstall.sh]
-      changed_when: true
+        argv: [/bin/sh, "/usr/local/bin/{{ cluster_service_name }}-uninstall.sh"]
       environment:
         K3S_DATA_DIR: /var/lib/rancher/k3s
-    - name: Remove the repository's fixed systemd drop-in after uninstall
+      changed_when: true
+    - name: Remove only the known owned drop-in directory
       ansible.builtin.file:
-        path: /etc/systemd/system/k3s.service.d/10-tailscale.conf
+        path: "/etc/systemd/system/{{ cluster_service_name }}.service.d"
         state: absent
-    - name: Remove the owned systemd drop-in directory
-      ansible.builtin.file:
-        path: /etc/systemd/system/k3s.service.d
-        state: absent
-    - name: Reload systemd after removing the owned unit and drop-in
+    - name: Reload systemd
       ansible.builtin.systemd_service:
         daemon_reload: true
-    - name: Remove only the fixed repository ownership directory
+    - name: Remove only the fixed cluster ownership directory
       ansible.builtin.file:
         path: /var/lib/personal-compute-v1
         state: absent
-    - name: Delete this repository's local kubeconfig after successful uninstall
-      ansible.builtin.file:
-        path: "{{ cluster_kubeconfig_path }}"
-        state: absent
-      delegate_to: localhost
-      become: false

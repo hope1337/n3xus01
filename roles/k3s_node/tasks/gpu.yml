@@ -1,0 +1,79 @@
+- name: Install the Ubuntu driver selector only when no working driver exists
+  ansible.builtin.apt:
+    name: ubuntu-drivers-common
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: cluster_gpu_driver.rc != 0
+
+- name: Install Ubuntu's recommended signed NVIDIA driver when absent
+  ansible.builtin.command:
+    argv: [ubuntu-drivers, install]
+  when: cluster_gpu_driver.rc != 0
+  register: cluster_gpu_driver_install
+  changed_when: true
+
+- name: Stop for the user to reboot after driver installation
+  ansible.builtin.fail:
+    msg: >-
+      NVIDIA driver installed. Reboot THIS DEVICE manually, then rerun the same
+      add-device command. Secure Boot may require local MOK enrollment. Repo does not
+      reboot remotely or replace an already working driver.
+  when: cluster_gpu_driver.rc != 0
+
+- name: Inspect an existing NVIDIA container runtime
+  ansible.builtin.stat:
+    path: /usr/bin/nvidia-container-runtime
+  register: cluster_gpu_runtime
+
+- name: Verify an existing runtime rather than upgrade it silently
+  ansible.builtin.command:
+    argv: [/usr/bin/nvidia-container-runtime, --version]
+  changed_when: false
+  when: cluster_gpu_runtime.stat.exists
+
+- name: Install repository prerequisites for a missing NVIDIA runtime
+  ansible.builtin.apt:
+    name: [ca-certificates, curl]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: not cluster_gpu_runtime.stat.exists
+
+- name: Download NVIDIA's signing key for the dedicated toolkit repository
+  ansible.builtin.get_url:
+    url: https://nvidia.github.io/libnvidia-container/gpgkey
+    dest: /usr/share/keyrings/personal-compute-nvidia.asc
+    owner: root
+    group: root
+    mode: "0644"
+  when: not cluster_gpu_runtime.stat.exists
+
+- name: Register only the signed stable NVIDIA toolkit repository
+  ansible.builtin.apt_repository:
+    repo: 'deb [signed-by=/usr/share/keyrings/personal-compute-nvidia.asc] https://nvidia.github.io/libnvidia-container/stable/deb/$(ARCH) /'
+    filename: personal-compute-nvidia
+    state: present
+    update_cache: true
+  when: not cluster_gpu_runtime.stat.exists
+
+- name: Install the pinned NVIDIA Container Toolkit when absent
+  ansible.builtin.apt:
+    name:
+      - nvidia-container-toolkit=1.20.1-1
+      - nvidia-container-toolkit-base=1.20.1-1
+      - libnvidia-container-tools=1.20.1-1
+      - libnvidia-container1=1.20.1-1
+    state: present
+    allow_downgrade: false
+  register: cluster_gpu_toolkit
+  when: not cluster_gpu_runtime.stat.exists
+
+- name: Record whether owned K3s needs a restart to discover the runtime
+  ansible.builtin.set_fact:
+    cluster_gpu_changed: "{{ cluster_gpu_toolkit.changed | default(false) }}"
+
+- name: Verify the runtime is callable before K3s startup
+  ansible.builtin.command:
+    argv: [/usr/bin/nvidia-container-runtime, --version]
+  changed_when: false

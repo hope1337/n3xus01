@@ -1,15 +1,9 @@
-# Validation tại môi trường tạo repository
+# Kiểm tra tại môi trường tạo repo
 
-Ngày: 2026-10-04. Môi trường: Windows; Git Bash và Python có sẵn, WSL/Linux controller và target Ubuntu chưa có.
+Ngày 2026-10-04. Windows có Python, Git Bash và PowerShell; chưa có WSL/Linux controller hay device Ubuntu/RTX 4090 kết nối.
 
-Đã chạy tại đây:
+Đã chạy và PASS: **19 Python regression tests**, kiểm tra **16 file YAML** và template server/worker, Bash syntax, PowerShell parser và WSL/SSH argument routing bằng mock. Test bao gồm config/role/state, secret rejection, duplicate YAML, command/job routing, dataset mounts, ownership/reset, failures; mô phỏng thêm worker và bài CPU từng device/CUDA GPU. Mock không cài WSL, SSH, sửa driver hoặc gọi API thật.
 
-- Bash syntax cho `cluster` và `tests/test_wrapper.sh` bằng Git Bash.
-- Regression tests offline cho wrapper, sử dụng fake Ansible/kubectl/curl trong một thư mục tạm riêng (không dùng cluster thật).
-- Python static checks: YAML với duplicate-key detection, Jinja render, endpoint Tailscale, secrets handling, manifest nội bộ, route overlap với cả node fresh và node đã chạy K3s, guard giữ Tailscale routes khi uninstall, command/path consistency.
-- Git whitespace/diff checks và kiểm tra ignore inventory, kubeconfig, key/token.
-- Chạy lại static checks và wrapper tests trên source xuất từ Git, chứng minh các file cần thiết có trong bản clone, không chỉ nằm trong workspace.
+Chưa xác minh tại đây: host bootstrap Linux/WSL thật, bridge Windows SSH trên account thật, Ansible native --syntax-check, provisioning/worker networking, driver/MOK/toolkit/NVIDIA device plugin, CUDA kernel và reboot persistence. CI Linux/Windows và `check --static` đã chuẩn bị để kiểm tra native syntax, không có nghĩa CI đã chạy.
 
-**Chưa chạy Ansible `--syntax-check` bằng Linux controller, provisioning qua SSH, workload thật hay reboot thật** tại môi trường Windows này. `./cluster check` và GitHub workflow đã chuẩn bị sẵn để chạy native Ansible syntax trên Ubuntu; workflow không có nghĩa CI đã được chạy. Làm `docs/acceptance.md` để xác nhận flow đầu-cuối trên máy của bạn.
-
-Không có host thật hoặc credential nào được khai báo trong repo. Không có thao tác remote provisioning, uninstall hoặc reboot nào đã được thực hiện.
+`check`/`test --gpu` là live tests đã implement để bạn xác minh trên máy thật. Chỉ coi thiết lập GPU sẵn sàng sau CUDA benchmark PASS. Làm docs/acceptance.md trước khi dùng cho workload quan trọng. Không có credentials/device thật nào trong source Git.

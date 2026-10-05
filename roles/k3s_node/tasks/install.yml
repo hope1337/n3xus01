@@ -38,9 +38,28 @@
     mode: "0600"
   register: cluster_config_written
 
+- name: Read join credentials locally without logging them
+  ansible.builtin.slurp:
+    src: "{{ cluster_join_token_path }}"
+  delegate_to: localhost
+  become: false
+  register: cluster_join_raw
+  no_log: true
+  when: cluster_role == 'worker'
+
+- name: Write root-only join credentials on the worker
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/join-token
+    content: "{{ cluster_join_raw.content | b64decode }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: cluster_role == 'worker'
+
 - name: Inspect K3s systemd unit
   ansible.builtin.stat:
-    path: /etc/systemd/system/k3s.service
+    path: "/etc/systemd/system/{{ cluster_service_name }}.service"
   register: cluster_unit
 
 - name: Download official installer from the pinned K3s release tag
@@ -54,8 +73,8 @@
 
 - name: Run official installer (pinned binary with upstream SHA256 verification)
   ansible.builtin.command:
-    argv: [/bin/sh, "{{ cluster_owner_dir }}/install-k3s.sh", server]
-    creates: /etc/systemd/system/k3s.service
+    argv: [/bin/sh, "{{ cluster_owner_dir }}/install-k3s.sh", "{{ 'server' if cluster_role == 'server' else 'agent' }}"]
+    creates: "/etc/systemd/system/{{ cluster_service_name }}.service"
   environment:
     INSTALL_K3S_VERSION: "{{ k3s_version }}"
     INSTALL_K3S_SKIP_START: "true"
@@ -85,7 +104,7 @@
 
 - name: Create K3s systemd drop-in directory
   ansible.builtin.file:
-    path: /etc/systemd/system/k3s.service.d
+    path: "/etc/systemd/system/{{ cluster_service_name }}.service.d"
     state: directory
     owner: root
     group: root
@@ -94,7 +113,7 @@
 - name: Make K3s wait for Tailscale on every boot
   ansible.builtin.template:
     src: tailscale.conf.j2
-    dest: /etc/systemd/system/k3s.service.d/10-tailscale.conf
+    dest: "/etc/systemd/system/{{ cluster_service_name }}.service.d/10-tailscale.conf"
     owner: root
     group: root
     mode: "0644"
@@ -102,10 +121,10 @@
 
 - name: Enable K3s and start it (restart only if managed configuration changed)
   ansible.builtin.systemd_service:
-    name: k3s
+    name: "{{ cluster_service_name }}"
     enabled: true
-    daemon_reload: true
-    state: "{{ 'restarted' if (cluster_config_written.changed or cluster_dropin_written.changed) else 'started' }}"
+    daemon_reload: "{{ cluster_dropin_written.changed or not cluster_unit.stat.exists }}"
+    state: "{{ 'restarted' if (cluster_config_written.changed or cluster_dropin_written.changed or cluster_gpu_changed | default(false)) else 'started' }}"
 
 - name: Wait for API and first-node readiness through the Tailscale endpoint
   ansible.builtin.command:
@@ -124,10 +143,11 @@
   retries: 36
   delay: 5
   until: cluster_ready.rc == 0 and cluster_ready.stdout == 'True'
+  when: cluster_role == 'server'
 
 - name: Check that K3s is enabled for subsequent reboots
   ansible.builtin.command:
-    argv: [systemctl, is-enabled, k3s]
+    argv: [systemctl, is-enabled, "{{ cluster_service_name }}"]
   register: cluster_enabled
   changed_when: false
   failed_when: cluster_enabled.stdout != 'enabled'

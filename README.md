@@ -1,133 +1,98 @@
-# Personal compute cluster — V1
+# Máy của bạn, tài nguyên cho agent
 
-Laptop → Tailscale/SSH → Ansible → một Ubuntu single-node K3s → kubectl → nginx.
+**Chuẩn bị một lần → thêm device → kiểm tra → mở agent và giao việc.**
 
-Laptop chỉ quản trị. `first-node` là server **đồng thời chạy workload**, dùng SQLite mặc định của K3s; không HA, worker, GPU hay agent integration trong V1.
+- **Host:** laptop Windows hoặc Ubuntu; nơi mở OpenCode/ChatGPT Work.
+- **Device:** máy Ubuntu chạy công việc, có thể có NVIDIA GPU.
+- Device đầu tiên giữ K3s chạy thường trực, đồng thời chạy workload. Các device sau là workers. Host không phải giữ Kubernetes chạy.
 
-## 1. Prerequisite trên laptop
+## Bạn tự chuẩn bị trước
 
-Chạy từ **Ubuntu 24.04 trên laptop dual boot**, với Tailscale đã kết nối. Cần Git, OpenSSH client, curl, Python 3.11–3.13, Ansible và kubectl cùng minor 1.36. Native Windows/PowerShell/Git Bash không chạy provisioning. [Lệnh cài công cụ một lần](docs/laptop-setup.md).
+Host và device đã có Tailscale. Bạn SSH được từ host vào device bằng key, đã xác minh host key, không hỏi SSH password. User trên device có sudo; **sudo vẫn có thể hỏi password** lúc cài đặt.
 
-Sau khi clone repo vào filesystem Linux, mở terminal trong repo:
+Device dùng Ubuntu 22.04/24.04, ít nhất 2 CPU, 2GB RAM, 10GiB trống và không bật swap. Chọn máy chưa cài Kubernetes. Host Ubuntu khuyến nghị 24.04. GPU flow hỗ trợ NVIDIA trên Ubuntu x86_64, gồm RTX 4090.
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-chmod +x cluster
-```
+## 1. Chuẩn bị host — một lệnh
 
-Mỗi terminal mới: `source .venv/bin/activate`. Wrapper không cài công cụ hoặc tải gì lên laptop khi chạy `setup`.
+Chạy trong thư mục repo vừa clone:
 
-## 2. Prerequisite trên target
-
-- Ubuntu 22.04/24.04 x86_64 hoặc arm64; systemd, Python 3, sudo và SSH đã hoạt động.
-- Tối thiểu 2 CPU, 2GB RAM, 10GiB đĩa trống; không bật swap. Repo kiểm tra và dừng, không tự sửa swap/boot/firewall.
-- Tailscale đã join tailnet, có `tailscale0`, `/usr/bin/tailscale`, hỗ trợ `tailscale wait`, và service `tailscaled` đã enabled khi boot.
-- Laptop SSH được vào target bằng SSH key/ssh-agent và hostname/IP Tailscale; user có sudo. Dùng OpenSSH qua Tailscale là lựa chọn mặc định; không cần Tailscale SSH.
-- Target tải được package Ubuntu, release K3s từ GitHub và container image. Tailnet policy hiện có cho phép laptop tới target TCP 22 và 6443.
-- Máy chưa có Kubernetes/K3s khác. Dải mạng hiện có không trùng `10.42.0.0/16` (Pods) hoặc `10.43.0.0/16` (Services).
-
-Không cần cài Ansible hay kubectl trên target. Repo không join Tailscale, thêm auth key, mở port router, sửa Tailscale policy hoặc tắt UFW.
-
-## 3. Khai báo target
-
-```bash
-cp inventory/hosts.example.yml inventory/hosts.yml
-nano inventory/hosts.yml
-```
-
-Chỉ sửa **hai giá trị** dưới host `first-node`:
-
-| Giá trị | Điền gì |
+| Windows PowerShell | Ubuntu terminal |
 | --- | --- |
-| `ansible_host` | IP **Tailscale** `100.x.y.z` của target, hoặc MagicDNS hostname trỏ tới IP đó. Ưu tiên IP để tránh nhầm DNS. |
-| `ansible_user` | Tên user Ubuntu dùng để SSH và sudo. |
+| `.\cluster.ps1 setup` | `./cluster setup` |
 
-Không đổi tên alias `first-node`. Nếu SSH chưa chọn đúng key, bỏ comment `ansible_ssh_private_key_file` và điền **đường dẫn** key trên laptop; không chép key vào repo. Hostname phải resolve đúng trên cả laptop và target.
+Repo tự cài công cụ; những lần sau không cần activate môi trường hoặc nhớ lệnh Ansible. Windows dùng Ubuntu-24.04 trong WSL và **SSH/key sẵn có của Windows**, không chép key hoặc yêu cầu join Tailscale trong WSL. Windows có thể hỏi quyền admin/restart khi cài WSL lần đầu. [Chi tiết host](docs/laptop-setup.md).
 
-SSH một lần từ laptop, xác minh fingerprint của target trước khi chấp nhận host key:
+## 2. Thêm device
 
-```bash
-ssh USER@TAILSCALE_HOST_OR_IP 'hostname; sudo -v'
+Chạy lệnh rồi trả lời tên máy, địa chỉ Tailscale, SSH user và có dùng GPU không:
+
+```powershell
+.\cluster.ps1 add-device
 ```
 
-Thay `USER` và `TAILSCALE_HOST_OR_IP` bằng đúng hai giá trị vừa khai báo. Repo giữ host-key checking; không dùng `StrictHostKeyChecking=no`.
-
-## 4. Setup bằng một command
-
 ```bash
-./cluster setup first-node
+./cluster add-device
 ```
 
-Nhập **sudo password của user trên target** ở `BECOME password:`; password chỉ dùng trong phiên, không lưu vào Git/config. Nếu target đã có passwordless sudo: `./cluster setup first-node --no-sudo-prompt`.
+Hoặc khai báo hết trong một command; thay **IP và user** bằng của bạn:
 
-Lệnh kiểm tra an toàn → cài release K3s cố định → bật systemd → chờ node Ready → lấy kubeconfig về laptop → kiểm tra API từ laptop. Lần đầu có thể mất vài phút tải image. Khi lỗi, xem bước `[cluster] ERROR (...)` và task Ansible báo `FAILED`/`UNREACHABLE`.
-
-Chạy lại chính command này để retry hoặc kiểm tra idempotence: không tạo node mới, không reset dữ liệu, không restart K3s nếu cấu hình không đổi. Repo từ chối nhận quản lý cài đặt có sẵn, sửa cấu hình đã bị đổi hoặc nâng phiên bản ngầm.
-
-## 5. Kiểm tra cluster
-
-```bash
-./cluster status
-./cluster kubectl get nodes -o wide
+```powershell
+.\cluster.ps1 add-device home-4090 --address 100.101.102.103 --user student --gpu
 ```
 
-Kỳ vọng node `first-node` ở trạng thái `Ready`, Internal IP là IP Tailscale. Kubeconfig admin nằm tại `.cluster/kubeconfig.yaml` (directory `0700`, file `0600`, Git ignore); repo không đổi `~/.kube/config` hoặc context khác. Muốn gọi kubectl trực tiếp:
-
 ```bash
-kubectl --kubeconfig "$PWD/.cluster/kubeconfig.yaml" --context personal-compute-v1 get nodes
+./cluster add-device home-4090 --address 100.101.102.103 --user student --gpu
 ```
 
-API chỉ bind IP Tailscale, kubelet dùng IP Tailscale, Flannel chọn `tailscale0`. Traefik, ServiceLB và metrics-server bị tắt. K3s vẫn cần tạo CNI interfaces, routes và iptables cho Pod networking như Kubernetes thông thường; repo không tắt firewall hoặc mở inbound public. [Chi tiết an toàn và giới hạn](docs/safety.md).
+Thông tin được lưu trong **`devices.yml`**, Git ignore. Máy đầu tiên tự thành server; máy tiếp theo tự thành worker. Không có secret trong file này. Nếu SSH cần key khác mặc định, thêm `--key PATH` (chỉ đường dẫn).
 
-## 6. Chạy workload test
+Repo push qua SSH, bật service tự chạy sau reboot và lấy quyền điều khiển về host. Với GPU: giữ driver đang hoạt động, cài driver khi chưa có, cài runtime và NVIDIA device plugin. Nếu cài driver mới, lệnh dừng, báo bạn **reboot device** rồi chạy lại cùng command. Không tự reboot hoặc sửa driver lỗi.
 
-```bash
-./cluster test
+Retry hoặc lấy lại quyền truy cập sau khi đổi Windows/Ubuntu: dùng lại **cùng `devices.yml`** rồi chạy `add-device home-4090`; không cần nhập lại. Chạy lại không reset cluster. Thêm máy lab bằng `add-device lab-01 --address ... --user ...`, không `--gpu` nếu không cần GPU.
+
+## 3. Kiểm tra đã sẵn sàng
+
+```powershell
+.\cluster.ps1 check
 ```
-
-Lệnh deploy nginx một replica trong namespace riêng, chờ Pod Ready rồi kiểm tra **HTTP 200 + trang Welcome to nginx** qua port-forward chỉ bind `127.0.0.1` trên laptop. Service là `ClusterIP`; không Ingress, NodePort hay public LoadBalancer. Port tạm tự đóng khi lệnh kết thúc.
-
-Kỳ vọng output `PASS`. nginx tiếp tục chạy để bạn quan sát; test chạy lại được. Dọn **chỉ namespace test có nhãn ownership đúng**:
-
-```bash
-./cluster test --cleanup
-```
-
-Chứng minh reboot persistence: khi sẵn sàng, **tự reboot target**, chờ nó online Tailscale rồi chạy lại `./cluster status` và `./cluster test`. Không cần chạy setup lại. [Checklist kiểm chứng trên máy thật](docs/acceptance.md).
-
-## 7. Uninstall/reset để thử lại
-
-**Xóa vĩnh viễn workload, K3s database và local persistent-volume data của node này.** Chỉ dùng khi bạn chấp nhận mất dữ liệu:
-
-```bash
-./cluster reset first-node --yes-delete-cluster
-./cluster setup first-node
-```
-
-Reset dùng uninstaller chính thức của K3s sau khi kiểm tra ownership, phiên bản, cấu hình và fingerprint service/scripts. Không gỡ Tailscale, SSH hay package Ubuntu. Không có ownership marker thì dừng, không xóa. Reset lần hai cũng dừng an toàn vì cluster không còn thuộc quản lý. Nếu cài lần đầu dở dang mà chưa có uninstaller, rerun setup trước. Không tự xóa marker để vượt qua safety checks.
-
-Repo chặn riêng thao tác upstream xóa advertised routes Tailscale, để reset giữ cấu hình Tailscale hiện tại.
-
-## Kiểm tra repo và cấu trúc
 
 ```bash
 ./cluster check
 ```
 
-Không SSH hay thay đổi target: kiểm tra Bash, YAML/Jinja, CIDR/network safety, wrapper bằng công cụ giả lập và Ansible `--syntax-check`. CI làm cùng việc trên Ubuntu. [Những kiểm tra đã chạy trong môi trường tạo repo](docs/validation.md).
+Lệnh kiểm tra node Ready, chạy CPU workload và truy cập nginx qua mạng nội bộ từ mỗi device; với GPU, chạy **CUDA benchmark thật**, không chỉ `nvidia-smi`. Kết quả đạt yêu cầu có `PASS`. Không mở service ra Internet. Khi đang chạy training chiếm GPU, hãy đợi job xong trước khi check.
 
-```text
-cluster                 wrapper UX; không chứa logic provisioning
-ansible/ansible.cfg      cấu hình SSH/Ansible
-inventory/              example được commit; hosts.yml của bạn bị ignore
-playbooks/              setup và reset
-roles/k3s_server/        kiểm tra an toàn, cài K3s, export kubeconfig
-kubernetes/             manifest nginx test
-tests/                  kiểm tra offline, không cần node thật
-docs/                   cài công cụ, an toàn, troubleshooting, acceptance
-.cluster/               kubeconfig/state local, bị ignore
+## 4. Mở agent và giao việc
+
+Cho agent quyền chạy command local và yêu cầu nó đọc **[AGENTS.md](AGENTS.md)** cùng **[hướng dẫn giao việc](docs/agent-usage.md)**. Chưa cần MCP; đây không phải tự động kết nối mọi chat cloud với laptop.
+
+Ví dụ thử việc nhỏ trên GPU:
+
+```powershell
+.\cluster.ps1 run home-4090 --image nvidia/cuda:12.5.0-base-ubuntu22.04 --gpu -- nvidia-smi
 ```
 
-`add-worker`/`add-gpu-worker` chưa implement; lệnh lạ sẽ dừng rõ ràng. Nguồn kỹ thuật: [K3s server flags](https://docs.k3s.io/cli/server), [installer variables](https://docs.k3s.io/reference/env-variables), [release đã pin](https://github.com/k3s-io/k3s/releases/tag/v1.36.4%2Bk3s1).
+```bash
+./cluster run home-4090 --image nvidia/cuda:12.5.0-base-ubuntu22.04 --gpu -- nvidia-smi
+```
+
+Lệnh trả tên job; agent dùng `jobs`, `logs JOB`, `wait JOB`, `delete-job JOB`. Bài CUDA trong `check` là kiểm tra tính toán GPU; ví dụ trên chỉ giúp làm quen luồng giao việc.
+
+Dataset/checkpoint/kết quả nằm trên device, mặc định:
+
+```text
+/srv/personal-compute/data/datasets/
+/srv/personal-compute/data/checkpoints/
+/srv/personal-compute/data/results/
+```
+
+Trong job, chúng nằm tại `/data/datasets` (chỉ đọc), `/data/checkpoints`, `/data/results`. Công việc chạy trên device bạn chọn, dùng quyền user Ubuntu của bạn. Code/thư viện phải có trong image hoặc sẵn trên device; repo không tự upload dataset hay biến nhiều VRAM thành một GPU lớn.
+
+Không phải bật terminal giữ kết nối. Tailscale và K3s chạy nền. Công việc đã gửi và đủ dữ liệu trên device tiếp tục chạy khi đóng agent/tắt host.
+
+## Khi cần xử lý thêm
+
+- `status`: chỉ xem trạng thái; `test --gpu home-4090`: chạy lại riêng bài GPU.
+- `check --static`: kiểm tra source, không SSH, không chạy workload.
+- `reset DEVICE --yes-delete-cluster`: **xóa workload/database/local PV của K3s**, giữ các thư mục data riêng, Tailscale và driver. Reset workers trước server. Không có backup, HA hoặc tự chuyển vai trò khi server hỏng.
+- [Lỗi thường gặp](docs/troubleshooting.md) · [Kiểm chứng máy thật](docs/acceptance.md) · [Kiểm tra đã chạy](docs/validation.md) · [Chi tiết an toàn](docs/safety.md).

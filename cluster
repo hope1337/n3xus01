@@ -1,191 +1,38 @@
 #!/usr/bin/env bash
-# UX only: provisioning lives in Ansible; workloads live in Kubernetes YAML.
 set -Eeuo pipefail
 umask 077
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-export ANSIBLE_CONFIG="$ROOT/ansible/ansible.cfg"
-STEP="parse command"
-PF_PID=""
-PF_LOG=""
-
-info() { printf '\n[cluster] %s\n' "$*"; }
-die() { printf '\n[cluster] ERROR (%s): %s\n' "$STEP" "$*" >&2; exit 1; }
-cleanup() {
-  if [[ -n "$PF_PID" ]]; then
-    kill "$PF_PID" 2>/dev/null || true
-    wait "$PF_PID" 2>/dev/null || true
-  fi
-  if [[ -n "$PF_LOG" ]]; then rm -f -- "$PF_LOG"; fi
-}
-on_error() {
-  local code=$?
-  printf '\n[cluster] ERROR (%s), exit %s. See the error above and docs/troubleshooting.md.\n' "$STEP" "$code" >&2
-  exit "$code"
-}
-trap cleanup EXIT
-trap on_error ERR
-
-usage() {
-  cat <<'USAGE'
-Personal compute cluster V1 (run on Ubuntu laptop)
-
-  ./cluster setup first-node [--no-sudo-prompt]
+if [[ ${1:-help} == help || ${1:-} == --help || ${1:-} == -h ]]; then
+  cat <<'HELP'
+Personal compute: setup -> add-device -> check -> ask your agent
+  ./cluster setup
+  ./cluster add-device [NAME] [--address TAILSCALE_IP] [--user SSH_USER] [--gpu]
+  ./cluster check                 live CPU/network/GPU checks
+  ./cluster check --static        local tests, no SSH
   ./cluster status
-  ./cluster test
-  ./cluster test --cleanup
-  ./cluster kubectl <kubectl arguments...>
-  ./cluster reset first-node --yes-delete-cluster [--no-sudo-prompt]
-  ./cluster check
-
-setup/reset ask for the TARGET user's sudo password (never saved).
-Use --no-sudo-prompt only if target sudo is passwordless.
-reset permanently deletes this cluster and its local workload data.
-V1 has no worker, GPU, HA, upgrade, or agent commands.
-USAGE
-}
-need() { command -v "$1" >/dev/null 2>&1 || die "Missing '$1'. See laptop prerequisites in README.md."; }
-linux_controller() {
-  [[ "$(uname -s)" == Linux ]] || die "Use Ubuntu on the laptop (dual boot). Native Windows/Git Bash is not an Ansible controller."
-}
-inventory() {
-  [[ -f "$ROOT/inventory/hosts.yml" ]] || die "Copy inventory/hosts.example.yml to inventory/hosts.yml, then edit ansible_host and ansible_user."
-  if grep -q 'CHANGE_ME' "$ROOT/inventory/hosts.yml"; then
-    die "Replace the CHANGE_ME values in inventory/hosts.yml."
-  fi
-}
-ansible_run() {
-  local playbook=$1 prompt=$2
-  shift 2
-  linux_controller
-  need ansible-playbook
-  need ssh
-  inventory
-  local args=(-i "$ROOT/inventory/hosts.yml")
-  if [[ "$prompt" == yes ]]; then args+=(--ask-become-pass); fi
-  # Keep user paths and all commands independent of the caller's cwd.
-  (cd "$ROOT" && ansible-playbook "${args[@]}" "$ROOT/playbooks/$playbook" "$@")
-}
-k() {
-  kubectl --kubeconfig "$ROOT/.cluster/kubeconfig.yaml" \
-    --context personal-compute-v1 --request-timeout=180s "$@"
-}
-require_cluster() {
-  linux_controller
-  need kubectl
-  [[ -f "$ROOT/.cluster/kubeconfig.yaml" ]] || die "No local kubeconfig. Run ./cluster setup first-node."
-}
-check_namespace_owner() {
-  local namespaces owner
-  namespaces="$(k get namespace personal-compute-smoke --ignore-not-found -o name)"
-  if [[ -n "$namespaces" ]]; then
-    owner="$(k get namespace personal-compute-smoke -o 'jsonpath={.metadata.labels.app\.kubernetes\.io/managed-by}')"
-    [[ "$owner" == personal-compute-v1 ]] || die "Namespace personal-compute-smoke exists but is not owned by this test. Refusing to change/delete it."
-  fi
-}
-diagnose_test() {
-  k get pods -n personal-compute-smoke -o wide || true
-  k get events -n personal-compute-smoke --sort-by=.lastTimestamp || true
-}
-
-COMMAND=${1:-help}
-if [[ $# -gt 0 ]]; then shift; fi
-case "$COMMAND" in
-  help|--help|-h) usage ;;
-  setup)
-    [[ ${1:-} == first-node ]] || die "Usage: ./cluster setup first-node [--no-sudo-prompt]"
-    shift
-    prompt=yes
-    if [[ ${1:-} == --no-sudo-prompt ]]; then prompt=no; shift; fi
-    [[ $# == 0 ]] || die "Unexpected setup arguments. Run ./cluster help."
-    STEP="Ansible preflight/install/export kubeconfig"
-    linux_controller
-    need kubectl
-    info "Setup first-node over SSH/Tailscale. SSH host keys are checked; sudo password is not saved."
-    ansible_run setup.yml "$prompt"
-    STEP="verify laptop can reach the Kubernetes API"
-    require_cluster
-    k wait node/first-node --for=condition=Ready --timeout=180s
-    k get nodes -o wide
-    info "Setup complete. Next: ./cluster status && ./cluster test"
-    ;;
-  status)
-    [[ $# == 0 ]] || die "Usage: ./cluster status"
-    STEP="cluster status over Tailscale"
-    require_cluster
-    k get --raw=/readyz
-    printf '\n'
-    k get nodes -o wide
-    k get pods -A -o wide
-    ;;
-  kubectl)
-    [[ $# -gt 0 ]] || die "Usage: ./cluster kubectl <arguments...>"
-    STEP="kubectl using this repository's kubeconfig"
-    require_cluster
-    k "$@"
-    ;;
-  test)
-    [[ $# == 0 || ( $# == 1 && ${1:-} == --cleanup ) ]] || die "Usage: ./cluster test [--cleanup]"
-    STEP="smoke-test safety checks"
-    require_cluster
-    need curl
-    check_namespace_owner
-    if [[ ${1:-} == --cleanup ]]; then
-      STEP="remove the owned smoke-test namespace"
-      k delete namespace personal-compute-smoke --ignore-not-found --timeout=120s
-      info "Smoke-test resources removed."
-      exit 0
-    fi
-    k wait node/first-node --for=condition=Ready --timeout=180s
-    STEP="deploy nginx and wait for a healthy Pod"
-    k apply -f "$ROOT/kubernetes/smoke-test.yml"
-    if ! k rollout status deployment/nginx -n personal-compute-smoke --timeout=180s; then
-      diagnose_test
-      die "nginx did not become Ready. Check image download, Pod events, and firewall policy."
-    fi
-    STEP="HTTP smoke test through a localhost-only temporary port"
-    PF_LOG="$(mktemp)"
-    k port-forward --address 127.0.0.1 -n personal-compute-smoke service/nginx :80 >"$PF_LOG" 2>&1 &
-    PF_PID=$!
-    port=""
-    for ((i=0; i<60; i++)); do
-      if ! kill -0 "$PF_PID" 2>/dev/null; then
-        cat "$PF_LOG" >&2
-        die "Temporary port-forward failed."
-      fi
-      port="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) -> 80$/\1/p' "$PF_LOG" | head -n 1)"
-      if [[ -n "$port" ]]; then break; fi
-      sleep 1
-    done
-    [[ -n "$port" ]] || die "Port-forward did not become ready within 60s."
-    body="$(curl --noproxy '*' --fail --silent --show-error --max-time 15 "http://127.0.0.1:$port/")"
-    [[ "$body" == *'Welcome to nginx!'* ]] || die "HTTP response did not contain the expected nginx page."
-    k get pods,service -n personal-compute-smoke
-    info "PASS: node Ready, nginx Pod Ready, HTTP 200 with expected content. No public Service."
-    info "nginx stays running for inspection. Remove it with: ./cluster test --cleanup"
-    ;;
-  reset)
-    [[ ${1:-} == first-node && ${2:-} == --yes-delete-cluster ]] || die "Destructive reset requires: ./cluster reset first-node --yes-delete-cluster [--no-sudo-prompt]"
-    shift 2
-    prompt=yes
-    if [[ ${1:-} == --no-sudo-prompt ]]; then prompt=no; shift; fi
-    [[ $# == 0 ]] || die "Unexpected reset arguments."
-    STEP="verify ownership and uninstall owned cluster"
-    info "RESET: permanently deleting first-node's K3s workloads and local cluster data."
-    ansible_run reset.yml "$prompt" --extra-vars '{"cluster_confirm_reset": true}'
-    info "Reset complete. To recreate: ./cluster setup first-node"
-    ;;
-  check)
-    [[ $# == 0 ]] || die "Usage: ./cluster check"
-    STEP="local static checks (no SSH, no target changes)"
-    linux_controller
-    need python3
-    need ansible-playbook
-    bash -n "$ROOT/cluster"
-    python3 "$ROOT/tests/static_check.py"
-    bash "$ROOT/tests/test_wrapper.sh"
-    (cd "$ROOT" && ansible-playbook -i inventory/hosts.example.yml --syntax-check playbooks/setup.yml)
-    (cd "$ROOT" && ansible-playbook -i inventory/hosts.example.yml --syntax-check playbooks/reset.yml)
-    info "PASS: YAML/Jinja/Bash, wrapper regression tests, and Ansible syntax. No live-cluster tests performed."
-    ;;
-  *) die "Unknown command '$COMMAND'. Run ./cluster help." ;;
-esac
+  ./cluster kubectl get pods -A   advanced troubleshooting
+  ./cluster run DEVICE --image IMAGE [--gpu] -- COMMAND ARGUMENTS...
+  ./cluster jobs | logs JOB | wait JOB | delete-job JOB
+  ./cluster reset DEVICE --yes-delete-cluster
+Windows: use .\cluster.ps1 with the same arguments.
+HELP
+  exit 0
+fi
+[[ "$(uname -s)" == Linux ]] || { echo 'Use cluster.ps1 on Windows.' >&2; exit 1; }
+if [[ -n ${CLUSTER_WINDOWS_SSH:-} ]]; then
+  ID="$(printf '%s' "$ROOT" | sha256sum | cut -c1-16)"
+  export CLUSTER_STATE_DIR="${CLUSTER_STATE_DIR:-$HOME/.local/share/personal-compute/$ID}"
+  export ANSIBLE_SSH_EXECUTABLE="$CLUSTER_WINDOWS_SSH"
+  export ANSIBLE_SSH_ARGS='-o ControlMaster=no -o StrictHostKeyChecking=yes -o BatchMode=yes'
+  export ANSIBLE_SSH_TRANSFER_METHOD=piped
+  export ANSIBLE_PIPELINING=true
+  export ANSIBLE_SSH_USETTY=false
+else
+  export CLUSTER_STATE_DIR="${CLUSTER_STATE_DIR:-$ROOT/.cluster}"
+fi
+export ANSIBLE_CONFIG="$ROOT/ansible/ansible.cfg"
+export ANSIBLE_LOCAL_TEMP="$CLUSTER_STATE_DIR/ansible-tmp"
+export PATH="$CLUSTER_STATE_DIR/tools/bin:$CLUSTER_STATE_DIR/venv/bin:$PATH"
+if [[ ${1:-} == setup ]]; then bash "$ROOT/scripts/setup-host.sh" "$ROOT" "$CLUSTER_STATE_DIR"; fi
+[[ -x "$CLUSTER_STATE_DIR/venv/bin/python" ]] || { echo '[cluster] Run ./cluster setup (Windows: .\cluster.ps1 setup) first.' >&2; exit 1; }
+exec "$CLUSTER_STATE_DIR/venv/bin/python" "$ROOT/scripts/cluster_cli.py" "$@"

@@ -1,32 +1,41 @@
 # Khi một bước lỗi
 
-Wrapper báo tên bước; Ansible báo đúng task và hostname lỗi. Sau khi sửa nguyên nhân, rerun `./cluster setup first-node`. Không xóa owner marker để bypass kiểm tra.
+Wrapper báo `[cluster] ERROR (bước)`; Ansible in tên task cụ thể. Sửa nguyên nhân rồi rerun cùng `add-device NAME`. Config đã được ghi để retry, không reset để sửa lỗi cài dở.
 
-| Lỗi | Việc cần kiểm tra |
+| Lỗi | Làm gì |
 | --- | --- |
-| `Missing ansible-playbook/kubectl` | Activate `.venv`, PATH; xem `laptop-setup.md`. |
-| `UNREACHABLE`, host key | SSH thủ công với đúng `ansible_user`/`ansible_host`; xác minh fingerprint. Không tắt host-key checking. |
-| `Permission denied (publickey)` | SSH key/ssh-agent trên laptop. Key phải được target chấp nhận trước; repo không tự phân phối key. |
-| `Missing sudo password` / sudo failed | Dùng command mặc định và nhập sudo password **target**. `--no-sudo-prompt` chỉ dành cho passwordless sudo. |
-| Target không supported / có swap | V1 yêu cầu Ubuntu 22.04/24.04, systemd, RAM/CPU/đĩa như README; tự chọn target phù hợp, repo không tự sửa boot/swap. |
-| Tailscale IP/hostname không khớp | Điền IP `100.x.y.z` thật; kiểm tra `tailscale status`, MagicDNS. Không dùng LAN IP/public IP. |
-| `tailscale wait` thiếu | Cập nhật Tailscale bằng cách thông thường của bạn trước khi setup; repo không quản lý Tailscale. |
-| Existing/unowned files hoặc config changed | Target có cài đặt khác hoặc chỉnh sửa ngoài repo. Repo dừng để bảo vệ nó. Không force overwrite; dùng target sạch hoặc kiểm tra thủ công. |
-| CIDR overlap | LAN/VPN/subnet route trùng `10.42/16` hoặc `10.43/16`. V1 không tự đổi networking; chọn mạng/target không trùng. |
-| K3s download/image pull failed | Internet, DNS, GitHub/registry và disk; retry sau khi mạng hồi phục. |
-| Server Ready nhưng laptop không tới API | Laptop đã join tailnet, policy cho phép TCP 6443, target firewall cho phép traffic trên tailscale0. Không mở API trên public interface. |
-| nginx rollout không Ready | Xem Pod events mà wrapper in ra; `ImagePullBackOff` thường là registry/DNS, `FailedScheduling` là tài nguyên hoặc node chưa Ready. |
-| `x509` sau thời gian dài | Rerun setup để lấy kubeconfig hiện tại; không bỏ certificate verification. |
-| Sau reboot không online | Target phải boot Ubuntu, tailscaled enabled và đăng nhập còn hiệu lực. Kiểm tra service logs. |
+| Windows chưa có WSL/distro | `cluster.ps1 setup`; chấp nhận UAC, restart nếu Windows yêu cầu, rerun setup. |
+| Python host không hỗ trợ | Dùng Ubuntu 24.04/Python 3.11–3.13; Windows wrapper tự dùng Ubuntu-24.04. |
+| SSH host key/password lỗi | Thử SSH bằng host OS, xác minh fingerprint/key/agent. Không tắt kiểm tra host key. Windows dùng Windows ssh.exe, không phải key của WSL. |
+| Sudo lỗi | Nhập password device. Chỉ dùng `--no-sudo-prompt` khi device đã passwordless sudo. |
+| Swap hoặc thiếu disk/RAM | Chọn/configure device phù hợp; repo không tự sửa swap hoặc boot. |
+| Driver vừa được cài | Reboot device, làm MOK enrollment ở màn hình máy nếu cần, rồi rerun command. |
+| Driver có nhưng nvidia-smi lỗi | Reboot/check driver/Secure Boot. Repo không tự thay driver đang cài. |
+| Toolkit version không tải được | Repo NVIDIA/DNS/apt; xem version pin trong gpu.yml, không đổi nguồn sang mirror ngẫu nhiên. |
+| GPU không allocatable | Driver/runtime/plugin. Check device plugin Pod logs, K3s restart discovery, RuntimeClass nvidia. |
+| GPU test Pending | GPU có thể đang bị job khác chiếm; đợi hoặc dừng job bạn đã yêu cầu. |
+| Node Ready nhưng network test lỗi | Policy giữa devices: TCP 6443/10250, UDP 8472; Pod CIDR/firewall cni0/flannel.1; DNS/image registry. Không mở public ports hoặc tắt firewall. |
+| Windows SSH tốt nhưng API không tới | WSL network/VPN tới 100.x IP; repo không tự sửa Windows network settings. |
+| CIDR overlap | Mạng hiện có trùng 10.42/16 hoặc 10.43/16; V1 không tự rewrite routes. |
+| Namespace/config/marker không owned | Dừng để bảo vệ cài đặt khác. Không xóa marker hoặc force overwrite. |
+| Permission denied dưới /data trong job | Kiểm tra quyền directory/file của user device. Dataset mount intentionally read-only; ghi vào results/checkpoints. |
+| Không thấy metadata sau đổi OS | Dùng cùng devices.yml, rerun add-device server rồi worker trên host OS mới. |
+| Worker rejoin bị node password mismatch | Nếu reset thành công nhưng bước delete Node thất bại, dọn stale Node bằng kubectl đúng cluster trước rejoin; không uninstall server. |
 
-Đọc log/diagnostics khi cần, thay đúng user/hostname:
+Agent có thể xem lỗi ngay từ host (Windows thay `./cluster` bằng `.\\cluster.ps1`):
 
 ```bash
-ssh USER@TAILSCALE_HOST_OR_IP 'sudo systemctl status k3s --no-pager; sudo journalctl -u k3s -n 80 --no-pager'
-./cluster kubectl get pods -A
+./cluster kubectl get pods -A -o wide
 ./cluster kubectl get events -A --sort-by=.lastTimestamp
+./cluster kubectl logs -n kube-system daemonset/personal-compute-nvidia
 ```
 
-UFW/firewalld active không bị repo tắt. Firewall phải cho phép API trên tailnet và Pod networking giữa local CNI interfaces; rule đúng phụ thuộc policy sẵn có. Repo dừng với lỗi readiness nếu traffic bị chặn. Không dùng giải pháp mở mọi port hoặc `ufw disable`. [Yêu cầu networking chính thức của K3s](https://docs.k3s.io/installation/requirements).
+Nếu worker đã được reset nhưng xóa Node thất bại, dùng `./cluster kubectl delete node WORKER --ignore-not-found` trước khi retry reset/rejoin. Chỉ áp dụng cho worker bạn vừa yêu cầu reset.
 
-Nếu setup thất bại sau khi tạo marker, rerun được. Nếu chưa cài được uninstaller, reset sẽ từ chối; hoàn thành setup trước. Nếu service/config đã bị sửa thủ công, sửa lại thay đổi đó trước khi dùng wrapper; không có lệnh force-adopt/force-reset trong V1.
+Log device (đổi USER/IP theo devices.yml; server service `k3s`, worker `k3s-agent`):
+
+```bash
+ssh USER@TAILSCALE_IP 'sudo journalctl -u k3s -n 80 --no-pager'
+```
+
+Không share kubeconfig hoặc join token khi báo lỗi. Job lỗi: dùng `logs JOB`, `wait JOB`; failed job không tự retry để tránh ghi đè output. Dataset/checkpoint/result được lưu ở device bạn chọn, không nằm trên mọi device.

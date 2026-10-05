@@ -15,4 +15,17 @@ jobs:
       - name: Install controller dependencies
         run: python -m pip install -r requirements.txt
       - name: Verify Bash, YAML, safety tests, and Ansible syntax
-        run: bash ./cluster check
+        run: |
+          python tests/static_check.py
+          python -m unittest discover -s tests -p 'test_*.py'
+          bash -n cluster
+          bash -n scripts/setup-host.sh
+          ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg" ansible-playbook -i inventory/hosts.example.yml --syntax-check playbooks/setup.yml
+          ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg" ansible-playbook -i inventory/hosts.example.yml --syntax-check playbooks/reset.yml
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify PowerShell launcher without installing WSL
+        shell: pwsh
+        run: ./tests/test_windows_launcher.ps1

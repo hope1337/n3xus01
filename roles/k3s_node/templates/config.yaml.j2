@@ -1,16 +1,23 @@
 # Managed by personal-compute-v1. Do not edit in place.
 node-name: {{ cluster_node_name | to_json }}
 node-ip: {{ cluster_tailscale_ip | to_json }}
+{% if cluster_role == 'server' %}
 bind-address: {{ cluster_tailscale_ip | to_json }}
 advertise-address: {{ cluster_tailscale_ip | to_json }}
 tls-san:
   - {{ cluster_tailscale_ip | to_json }}
+{% else %}
+server: {{ ('https://' ~ cluster_server_ip ~ ':6443') | to_json }}
+token-file: /etc/rancher/k3s/join-token
+{% endif %}
 flannel-iface: tailscale0
+{% if cluster_role == 'server' %}
 write-kubeconfig-mode: "0600"
 disable:
   - traefik
   - servicelb
   - metrics-server
+{% endif %}
 kubelet-arg:
   - "address={{ cluster_tailscale_ip }}"
   - "read-only-port=0"

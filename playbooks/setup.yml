@@ -1,19 +1,18 @@
-- name: Provision the first single-node K3s server
-  hosts: k3s_servers
+- name: Provision only the device explicitly selected by the host CLI
+  hosts: k3s_nodes
   become: true
   gather_facts: true
   any_errors_fatal: true
   pre_tasks:
-    - name: Require precisely one first-node target
+    - name: Require one selected device and exactly one server in inventory
       ansible.builtin.assert:
         that:
-          - groups['k3s_servers'] | length == 1
-          - inventory_hostname == 'first-node'
           - ansible_play_hosts_all | length == 1
-          - ansible_host is defined
-          - ansible_user is defined
-          - "'CHANGE_ME' not in ansible_host"
-          - "'CHANGE_ME' not in ansible_user"
-        fail_msg: "V1 requires exactly one host named first-node. Edit inventory/hosts.yml."
+          - cluster_role in ['server', 'worker']
+          - cluster_id is match('^[a-f0-9]{32}$')
+          - cluster_node_name is match('^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$')
+          - groups['k3s_nodes'] | map('extract', hostvars, 'cluster_role') | select('equalto', 'server') | list | length == 1
+          - cluster_role == 'server' or cluster_server_ip is match('^100\.')
+        fail_msg: "Use add-device; exactly one server and one selected device are required."
   roles:
-    - k3s_server
+    - k3s_node
