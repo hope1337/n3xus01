@@ -74,6 +74,8 @@ MY_PROJECT/
 
 Project init đánh dấu folder và chuẩn bị communication, **không copy hoặc lưu toàn bộ project vào repo CLI**, không có registry project trên một server. Nó thêm `/communication/` vào .gitignore của project và giữ dữ liệu/ID khi chạy lại.
 
+Init cũng chuẩn bị AGENTS.md ở gốc để dẫn agent vào communication/guides/n3xus/GUIDE_INDEX.md. Bộ copy gồm onboarding, rules, CLI/storage và reference docs, giữ link tương đối. Rules riêng của project được giữ. Init lại cập nhật snapshot chưa sửa; bản copy/phần onboarding sửa tay bị giữ và báo lỗi. Không copy CLI code/config/secret. Công cụ agent hỗ trợ AGENTS.md có thể tự đọc từ project; chat không có quyền filesystem vẫn cần cơ chế truy cập riêng.
+
 CLI tìm marker từ cwd lên thư mục cha; `--project-dir PATH` chọn gốc project khi chạy ở nơi khác. Source/output/message-file tương đối tính từ gốc project và phải nằm trong project. Thiếu context thì các lệnh ghi dữ liệu công việc báo lỗi, không dùng workspace CLI thay thế. Các thao tác quản trị device/Conda có phạm vi dùng chung riêng.
 
 Status/jobs/dashboard vẫn xem toàn bộ device/job được quản lý trong profile. Communication snapshot chỉ đưa vào các job có receipt của project hiện tại; tài nguyên và số job của device vẫn là thông tin toàn cục. Receipt là lịch sử gửi việc, không phải bằng chứng tiến trình đang sống.

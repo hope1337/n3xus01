@@ -6,6 +6,8 @@ Use `n3xus` from any directory after user setup. If PATH is stale, use this repo
 
 ## Start a session
 
+Project init also installs guide snapshots in communication/guides/n3xus and adds an onboarding block to root AGENTS.md while preserving project-authored instructions. Read GUIDE_INDEX.md, onboarding/rules/usage, then the current project's handoff. Do not edit generated copies/block without an explicit human request. Run project init again to refresh unchanged copies after a tool update; changed/unowned copies cause an error instead of overwrite. Do not mistake the copied guide folder for the tool checkout or infer CLI behavior from an outdated snapshot.
+
 The human creates a separate project outside the CLI repo and runs `n3xus project init` once. The marker is discovered from cwd/parents; explicit --project-dir selects an initialized root. If no project is resolved, report the missing context instead of creating one in arbitrary cwd. Project init preserves existing files/identity and appends /communication/ to .gitignore. Read the current project's SUMMARY.md/notes, not the CLI repo's legacy workspace handoff. Commands below assume cwd is in the selected project; append --project-dir PATH when elsewhere.
 
 ```text

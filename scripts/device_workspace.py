@@ -1,6 +1,7 @@
 """Shared host configuration and separate project-local handoff data."""
 from datetime import datetime, timezone
 import json
+import hashlib
 import re
 from pathlib import Path
 import uuid
@@ -10,6 +11,84 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 PROJECT_MARKER = '.n3xus-project.json'
+GUIDE_BLOCK = '''<!-- n3xus:agent-guide:start -->
+## n3xus device tools and project handoff
+
+Before using devices, read [the guide index](communication/guides/n3xus/GUIDE_INDEX.md)
+and its onboarding/rules/CLI guide. They are local documentation snapshots,
+not workload source or authorization to edit the n3xus tool.
+Read this project's communication/shared/SUMMARY.md and communication show --json,
+then verify live state before resuming work. Keep agent data in your own
+communication/agents/ID folder. Human authorization takes precedence.
+<!-- n3xus:agent-guide:end -->
+'''
+
+def install_guides(root,tool_root):
+    """Refresh owned snapshots only; preserve project-authored instructions."""
+    tool_root=Path(tool_root)
+    destination=safe_path(root/'communication/guides/n3xus')
+    manifest=safe_path(destination/'manifest.json')
+    instructions=safe_path(root/'AGENTS.md')
+    original=instructions.read_text(encoding='utf-8') if instructions.exists() else ''
+    if 'n3xus:agent-guide:' in original and (original.count(GUIDE_BLOCK)!=1 or original.count('n3xus:agent-guide:start')!=1 or original.count('n3xus:agent-guide:end')!=1):
+        raise DeviceError('Project AGENTS.md n3xus block was modified. Preserve/reconcile it manually.','guide_modified')
+    sources=['AGENTS.md','START_HERE.md','README.md','workspace/README.md']+[f'docs/{p.name}' for p in sorted((tool_root/'docs').glob('*.md'))]
+    payload={relative:safe_path(tool_root/relative).read_bytes() for relative in sources}
+    payload['GUIDE_INDEX.md']=('''# Project-local n3xus guides
+
+These copies are installed by n3xus project init. This folder is documentation,
+not the CLI checkout. References to the tool repository in the rules mean the
+original installed n3xus checkout, not your workload project. Existing project
+instructions also apply; human authorization takes precedence.
+
+Read in order:
+1. [START_HERE.md](START_HERE.md): onboarding, project context and handoff.
+2. [AGENTS.md](AGENTS.md): permissions, sudo blockers and storage rules.
+3. [Agent usage](docs/agent-usage.md): command workflow and examples.
+4. [Storage layout](workspace/README.md): shared config versus project data.
+
+References: [human README](README.md), [architecture](docs/architecture.md),
+[project overview](docs/PROJECT_OVERVIEW.md), [troubleshooting](docs/troubleshooting.md),
+[safety](docs/safety.md), [acceptance](docs/acceptance.md), [validation](docs/validation.md).
+
+Project code belongs outside this guide folder. Shared task context is in
+communication/shared relative to the PROJECT root, not relative to this guide.
+Notes/validation are historical; use CLI JSON to inspect actual devices/jobs.
+Run project init again after updating n3xus to refresh unchanged copies. Modified
+copies are preserved and cause an error rather than being overwritten.
+Agents must not edit these copies unless the human explicitly requests it.
+CLI behavior is determined by the installed tool, not by this snapshot.
+''').encode('utf-8')
+    old={}
+    if manifest.exists():
+        metadata=read_json(manifest)
+        if not isinstance(metadata,dict) or metadata.get('schema')!=1 or not isinstance(metadata.get('files'),dict):
+            raise DeviceError('Invalid guide manifest. Refusing overwrite.','guide_modified')
+        old=metadata['files']
+    elif destination.exists() and any(destination.iterdir()):
+        raise DeviceError('Guide folder has unowned files. Refusing to adopt it.','guide_modified')
+    # Verify every old owned file, including docs removed from newer versions.
+    for relative,digest in old.items():
+        from device_common import relative_path
+        relative_path(relative)
+        target=safe_path(destination/relative)
+        if target.exists() and hashlib.sha256(target.read_bytes()).hexdigest()!=digest:
+            raise DeviceError(f'Guide {relative} was modified; it was not overwritten.','guide_modified')
+    for relative in payload:
+        target=safe_path(destination/relative)
+        if target.exists() and relative not in old:
+            raise DeviceError(f'Unowned guide {relative}; refusing overwrite.','guide_modified')
+    for relative,content in payload.items():
+        target=safe_path(destination/relative)
+        target.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+        temporary=safe_path(target.with_name(target.name+'.tmp-'+uuid.uuid4().hex))
+        temporary.write_bytes(content); temporary.chmod(0o600); temporary.replace(target)
+    atomic_json(manifest,{'schema':1,'tool_repo':str(tool_root.resolve()),'copied_at':now(),
+                          'files':{**old,**{key:hashlib.sha256(value).hexdigest() for key,value in payload.items()}}})
+    if GUIDE_BLOCK not in original:
+        with instructions.open('a',encoding='utf-8',newline='\n') as handle:
+            handle.write(('\n\n' if original else '# Project agent instructions\n\n')+GUIDE_BLOCK)
+    return {'agent_instructions':str(instructions),'guides':str(destination)}
 
 def initialize_host(root):
     root=safe_path(root)
@@ -65,7 +144,8 @@ def init_project(explicit,tool_root):
     if '/communication/' not in content.splitlines():
         with ignore.open('a',encoding='utf-8',newline='\n') as handle:
             handle.write(('\n' if content and not content.endswith('\n') else '')+'/communication/\n')
-    return {**project_info(root,tool_root),'note':'Project ready. Device config remains shared; previous CLI workspace data was not moved.'}
+    guides=install_guides(root,tool_root)
+    return {**project_info(root,tool_root),**guides,'note':'Project ready. Root AGENTS.md links local guide copies. Shared config and previous data were not moved.'}
 
 def project_path(root,value):
     path=Path(value).expanduser()

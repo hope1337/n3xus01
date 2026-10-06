@@ -106,3 +106,32 @@ class ProjectTests(Temporary):
         self.assertEqual(len(files),1)
         self.assertEqual(read_json(files[0])['id'],record['id'])
         self.assertFalse((cli.WORKSPACE/'communication').exists())
+
+    def test_guides_and_existing_project_instructions_survive_repeated_init(self):
+        instructions=self.a/'AGENTS.md'
+        instructions.write_text('# My project\nKeep my own rules.\n',encoding='utf-8')
+        first=self.init(self.a); self.init(self.a)
+        self.assertTrue(instructions.read_text().startswith('# My project\nKeep my own rules.\n'))
+        self.assertEqual(instructions.read_text().count('n3xus:agent-guide:start'),1)
+        guides=Path(first['guides'])
+        self.assertEqual((guides/'docs/agent-usage.md').read_bytes(),(cli.ROOT/'docs/agent-usage.md').read_bytes())
+        self.assertFalse((guides/'workspace/config').exists())
+        import re
+        for path in guides.rglob('*.md'):
+            for link in re.findall(r'\]\(([^)]+)\)',path.read_text(encoding='utf-8')):
+                if '://' not in link and not link.startswith('#'):
+                    self.assertTrue((path.parent/link.split('#')[0]).exists(),f'{path}: {link}')
+
+    def test_modified_or_unowned_guides_are_preserved(self):
+        first=self.init(self.a)
+        edited=Path(first['guides'])/'docs/agent-usage.md'
+        edited.write_text('My edited guide',encoding='utf-8')
+        with self.assertRaises(DeviceError) as caught: self.init(self.a)
+        self.assertEqual(caught.exception.code,'guide_modified')
+        self.assertEqual(edited.read_text(),'My edited guide')
+        instructions=self.a/'AGENTS.md'; original=instructions.read_bytes()
+        self.assertIn(b'n3xus:agent-guide:start',original)
+        unowned=self.b/'communication/guides/n3xus'; unowned.mkdir(parents=True)
+        (unowned/'custom.txt').write_text('keep')
+        with self.assertRaises(DeviceError): self.init(self.b)
+        self.assertEqual((unowned/'custom.txt').read_text(),'keep')

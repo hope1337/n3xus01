@@ -109,7 +109,11 @@ Mở hello.txt trong thư mục tải về để xem kết quả. Job có ID ri�
 
 Code đặt trong `PROJECT/src/` hoặc `PROJECT/communication/agents/ID/work/TEN_TAC_VU/`, rồi sync đúng thư mục code đó. Sync giới hạn **64 MiB / 20.000 file**, bỏ các tên secret/cache/dataset phổ biến và từ chối symlink. Không sync cả project/home; exclusions không phải máy dò secret. Dataset/model lớn giữ trên device, code dùng đường dẫn sẵn có. Kết quả trên device mặc định ghi vào `DEVICE_OUTPUT_DIR`; fetch mặc định tải vào `communication/agents/human/downloads/DEVICE-JOB/`, dùng `--agent ID` cho agent khác.
 
-`project init` tạo marker `.n3xus-project.json`, communication và thêm `/communication/` vào .gitignore; chạy lại giữ nguyên dữ liệu/ID. CLI tìm marker từ thư mục đang đứng lên thư mục cha. `n3xus project show` cho biết project đang chọn. Nếu chạy từ nơi khác, thêm `--project-dir "ĐƯỜNG_DẪN_PROJECT"`. Các đường dẫn code/output/message-file tương đối tính từ **gốc project**, và phải nằm trong project. Chưa xác định được project thì các lệnh ghi dữ liệu sẽ báo lỗi, không tự ghi vào repo CLI. Status/jobs/dashboard/inspect vẫn dùng được ở mọi nơi.
+`project init` tạo marker `.n3xus-project.json`, communication và thêm `/communication/` vào .gitignore; chạy lại giữ nguyên dữ liệu/ID. Nó cũng tạo **AGENTS.md ở gốc project** để dẫn agent vào bộ guide local trong **communication/guides/n3xus/**. Nếu đã có AGENTS.md, nội dung cũ được giữ, chỉ thêm một phần onboarding riêng. Bộ guide có index, START_HERE, rules, hướng dẫn CLI/storage và tài liệu tham khảo; không copy code CLI hay config/secret.
+
+Agent có hỗ trợ tự đọc AGENTS.md chỉ cần mở đúng project để nhận hướng dẫn; không cần bạn chỉ file START_HERE ở repo CLI mỗi lần. Đây không tự cấp quyền đọc file/chạy command cho chat cloud. Sau khi nâng cấp n3xus, chạy lại project init để cập nhật guide: bản copy hoặc phần onboarding bị sửa thủ công sẽ được giữ và báo lỗi, không bị ghi đè. Project cũ chỉ cần chạy lại init một lần để bổ sung guide.
+
+CLI tìm marker từ thư mục đang đứng lên thư mục cha. `n3xus project show` cho biết project đang chọn. Nếu chạy từ nơi khác, thêm `--project-dir "ĐƯỜNG_DẪN_PROJECT"`. Các đường dẫn code/output/message-file tương đối tính từ **gốc project**, và phải nằm trong project. Chưa xác định được project thì các lệnh ghi dữ liệu sẽ báo lỗi, không tự ghi vào repo CLI. Status/jobs/dashboard/inspect vẫn dùng được ở mọi nơi.
 
 `--project my-project` khi sync và tên sau device khi run là **nhãn code trên device**, khác với `--project-dir` là thư mục local. Chọn nhãn riêng cho mỗi project để không nhầm revision giữa các công việc.
 
@@ -164,7 +168,7 @@ Snapshot là ảnh chụp lúc chạy lệnh, không tự cập nhật sau khi h
 
 Mỗi khi mở agent mới, cho quyền đọc file/chạy lệnh local và chỉ cần nói:
 
-> Đọc START_HERE.md trong repo n3xus. Làm việc trong project folder [đường dẫn project]. Yêu cầu: …
+> Làm việc trong project folder [đường dẫn project], đọc AGENTS.md ở đó. Yêu cầu: …
 
 Nếu agent ở ngoài repo, đưa đường dẫn tuyệt đối tới [START_HERE.md](START_HERE.md). File dẫn agent tới rules, hướng dẫn CLI và handoff chung để hiểu ngữ cảnh mà không cần bạn kể lại các chat trước. Tài liệu dành cho agent dùng tiếng Anh; README dành cho bạn giữ tiếng Việt và agent vẫn báo lại bằng tiếng Việt. Khi chưa giao tác vụ, agent chỉ đọc và chờ; trạng thái cũ vẫn phải kiểm tra lại trước khi làm việc.
 

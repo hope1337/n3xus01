@@ -2,6 +2,8 @@
 
 Read this file to understand n3xus and take over work without asking the user to repeat past chats. Reading it does not authorize system maintenance. Read the linked documents before acting.
 
+Project init installs a local copy of these guides under PROJECT/communication/guides/n3xus and links them from the project's root AGENTS.md. If reading a copy, this folder is documentation, not the actual CLI checkout; repository-maintenance restrictions protect the original tool and its guide copies, not task-authorized project source. Read the project root instructions as well. GUIDE_INDEX.md explains the reading order; copied documents are snapshots, not live device state.
+
 ## System
 
 **n3xus** sends code from a **host** (Windows/Ubuntu laptop) to **devices** (Ubuntu machines), runs it in the background, reads logs and fetches results. The user prepares Tailscale, SSH and keys. Only registered devices are managed; SSH access alone does not authorize using or registering every machine in the tailnet.
