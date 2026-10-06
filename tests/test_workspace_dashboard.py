@@ -69,7 +69,9 @@ class WorkspaceTests(Temporary):
         self.assertTrue(common.pack_directory(source))
 
     def test_successful_submission_survives_local_receipt_failure(self):
-        args = cli.arguments(['run','test','hello','--','python','main.py'])
+        project=self.path/'project'; project.mkdir()
+        workspace.init_project(project,cli.ROOT)
+        args = cli.arguments(['run','test','hello','--project-dir',str(project),'--','python','main.py'])
         conf = {'profile':'a'*32,'devices':{'test':{'user':'test','address':'100.64.0.1'}}}
         with patch.object(cli,'config',return_value=conf), patch.object(cli,'remote',return_value={'id':'job-'+'a'*16}), patch.object(workspace,'receipt',side_effect=OSError('disk full')):
             action, result = cli.execute(args)

@@ -24,3 +24,37 @@ Dashboard keyboard loop/confirmation/restoration was tested with simulated keys;
 ## Rename acceptance
 
 Actual Windows setup migrated device.ps1/device.cmd to n3xus.ps1/n3xus.cmd in the same user bin. Legacy files verified absent afterward. Both n3xus doctor (PowerShell) and n3xus.cmd doctor worked from the OS temp directory. Native launcher tests use the new names on PowerShell 5.1/7. The Linux source launcher is renamed n3xus with Git executable bit 100755 (intent-to-add only; no commit). CI syntax command and README/agent examples updated. Internal device protocol/state/profile identifiers were retained; no SSH, helper refresh or remote job changes.
+
+## Agent onboarding document — 2026-10-06
+
+Added START_HERE.md as a single reusable entry point, linking AGENTS.md, agent usage, workspace layout and local shared handoff. README contains the short onboarding prompt. Existing use-only rules explicitly protect the onboarding file. Directly checked all onboarding document links and ran static_check.py plus git diff --check. Documentation-only change: unit/launcher/device tests were not rerun; the 68-test result above belongs to the previous code revision. No SSH, remote job changes or commit.
+
+## English agent documentation — 2026-10-06
+
+Translated START_HERE.md, docs/agent-usage.md and docs/architecture.md into English, preserving permissions, storage, approval and execution rules. AGENTS.md was already English. Human README/workspace guide remain Vietnamese; the user-facing response language remains Vietnamese. Document links, static_check.py and git diff --check passed. Documentation-only: no unit/launcher tests rerun, no SSH or device changes. No tokenizer-specific percentage reduction claimed for these files.
+
+## Resource table — 2026-10-06
+
+Status and dashboard (once/live) share a resource formatter: CPU logical threads, available/total RAM and free/total VRAM in GiB, with one row per GPU. Existing probe fields are reused; JSON schema and remote helper are unchanged. CPU is a thread count, not utilization. Unknown values are not reported as zero.
+
+Checks: static_check.py PASS; unittest discovery 68 tests (62 passed, 6 skipped as described above); Git Bash `bash -n n3xus` PASS; native Windows launcher script PASS on PowerShell 5.1/7; git diff --check PASS. Offline status/dashboard demos passed. Manual offline fixtures checked multiple GPUs, zero/missing memory, offline/CPU-only devices and table widths of 48/110/150 columns. No new test files were needed for this presentation change. No SSH, remote helper updates, device changes or live GPU measurement; native Linux checks remain unverified here.
+
+## Progressive terminal feedback — 2026-10-06
+
+Human terminal status/jobs/dashboard publishes devices as responses arrive. Read-only probe/overview streams CPU/RAM before GPU/Conda/linger; overview keeps job-list placeholders until job information arrives. Inspect uses the same probe stages. Other SSH operations and HTTP health checks show a waiting spinner; wait displays the latest observed job between polls. Loading placeholders are temporary, not offline or zero metrics. JSON and redirected output retain complete responses without terminal animation. Confirmation/sudo prompts are not animated. Progress threads and local SSH pipe readers are temporary and cleaned up; no new server, dependency, helper installation or remote state mutation.
+
+Checks: `python tests/static_check.py` PASS; unittest discovery **74 tests: 68 passed, 6 skipped** (same platform limitations above); Git Bash `bash -n n3xus` PASS; native Windows launcher script PASS on PowerShell 5.1/7; `git diff --check` PASS. Six new offline tests cover progress arriving before the final response, draining large stderr without pipe deadlock, timeout while stdin is blocked and child cleanup, malformed/missing final responses, fast-device/CPU results while another device waits, final config order, JSON isolation, loading placeholders and exception cleanup. Child processes are local Python programs, not SSH. No live device requests or GPU/Conda/service changes were performed. Actual terminal animation and streamed probes over real Tailscale SSH on Windows/Ubuntu remain acceptance checks; Linux integration tests remain skipped here.
+
+## Dashboard refresh correction — 2026-10-06
+
+Fixed generic progress being appended below the interactive dashboard. Refresh now uses the dashboard's full-screen renderer and retains previously observed fields/job lists only while their new response is pending, with an explicit refreshing banner. Fresh fields replace old values; final errors discard cached resources/jobs. Cached data does not become a CLI JSON result or an action target during refresh.
+
+Checks: static_check.py PASS; unittest discovery **76 tests: 70 passed, 6 skipped**; Git Bash launcher syntax PASS; native Windows PowerShell 5.1/7 launcher checks PASS; git diff --check PASS. Two added offline tests cover pending GPU/job retention alongside fresh RAM, cache removal on final errors, no input snapshot mutation, and two dashboard polling cycles that replace the same screen without the generic loading table, retaining selection/job display and restoring the terminal. These use simulated snapshots/terminal keys, not real SSH or visual acceptance on a physical terminal. No device/helper/job changes, package installation or commit.
+
+## Independent workload projects — 2026-10-06
+
+Shared device/profile/launcher configuration stays in CLI workspace/config. Setup no longer creates task communication/runs. Added project init/show and --project-dir; nearest ancestor project markers identify local workload roots outside the CLI repo. Communication, agent scratch/downloads and job/service receipts go to the selected project's communication folder. Relative source/output/message-file paths resolve from that root and cannot escape it; project-writing commands require context before remote work. Fetch defaults to agent downloads, or human. Project snapshots filter job rows by local receipts while global device resources/counts remain explicitly labelled. Remote labels/profiles/jobs, existing user config and legacy workspace data are not renamed, moved or deleted. Updated README, onboarding/rules, agent/storage/architecture guides and acceptance instructions.
+
+Checks: `python tests/static_check.py` PASS; unittest discovery **85 tests: 79 passed, 6 skipped**; Git Bash `bash -n n3xus` PASS; native Windows launcher script PASS (PowerShell 5.1/7); git diff --check PASS. Nine added offline tests cover two-project note isolation, nested discovery/explicit override, stable marker and ignore-file preservation, refusal of missing/tool-repo/invalid contexts before remote submission, path escapes/literal program flags, project-only snapshots/receipts, real archive extraction into default agent downloads and overwrite refusal, project-independent global setup/status, and receipt routing after submission. Updated receipt-failure regression to select a real isolated project before simulating disk failure.
+
+Tests use isolated temporary folders and mocked SSH responses; no real project was initialized, no existing user communication was migrated, no actual device requests/helper refresh/job stops/service/package changes or commit. Native Linux integration remains skipped on this Windows host. Live multi-project workload acceptance on devices is not claimed by these offline results.

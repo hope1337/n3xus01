@@ -40,6 +40,13 @@ def crop(value, maximum):
         result += character
     return result + '…'
 
+
+def memory_pair(free, total, divisor=1):
+    """Use available RAM/free VRAM; missing metrics are not zero."""
+    def value(number):
+        return f'{number/divisor:.1f}' if isinstance(number,(int,float)) and number >= 0 else '?'
+    return value(free)+'/'+value(total)
+
 class UI:
     def __init__(self, color='auto'):
         self.color = color == 'always' or color == 'auto' and sys.stdout.isatty() and not os.environ.get('NO_COLOR')
@@ -57,6 +64,26 @@ class UI:
     def message(self, text, good=True):
         print(self.paint('✓ ' if good else '! ', '32' if good else '33') + sanitize(text))
 
+    def resources(self, devices, jobs=False):
+        headers=['DEVICE','SSH','ACTIVE JOBS' if jobs else 'READY','CPU(T)','RAM AVAIL/TOTAL','GPU','VRAM FREE/TOTAL']
+        rows=[]
+        for device in devices:
+            if device.get('loading'):
+                rows.append([device['name']]+['loading…']*6)
+                continue
+            online=device.get('online',False)
+            readiness='ready' if device.get('ready') else 'blocked' if device.get('blocked') else ('needs prepare' if device.get('prepared') else 'needs add') if online else '—'
+            base=[device['name'],'online' if online else 'offline',device.get('active_jobs','unknown') if jobs else readiness,
+                  str(device['cpu_count']) if online and device.get('cpu_count') is not None else '—',
+                  memory_pair(device.get('memory_available_gib'),device.get('memory_total_gib')) if online else '—']
+            if jobs and device.get('jobs_loading'): base[2]='loading…'
+            pending=set(device.get('loading_fields',[]))
+            gpus=device.get('gpus',[]) if online else []
+            for index,gpu in enumerate(gpus or [None]):
+                rows.append((base if index==0 else ['']*len(base))+['loading…' if 'gpus' in pending else gpu.get('name','GPU') if gpu else '—','loading…' if 'gpus' in pending else memory_pair(gpu.get('free_mib'),gpu.get('total_mib'),1024) if gpu else '—'])
+        self.table(headers,rows)
+        return len(rows)
+
     def table(self, headers, rows):
         if not rows:
             self.message('Nothing here yet.', False)
@@ -70,7 +97,7 @@ class UI:
             for value, size in zip(row, widths):
                 text = crop(value, size)
                 padded = text + ' ' * max(0, size - width(text))
-                code = '1;36' if heading else '32' if text in ('online', 'ready', 'running', 'completed', 'active') else '31' if text in ('offline', 'failed', 'interrupted', 'blocked') else '33' if text in ('queued', 'starting', 'stopped', 'needs prepare', 'needs add') else '0'
+                code = '1;36' if heading else '32' if text in ('online', 'ready', 'running', 'completed', 'active') else '31' if text in ('offline', 'failed', 'interrupted', 'blocked') else '33' if text in ('queued', 'starting', 'stopped', 'needs prepare', 'needs add', 'loading…') else '0'
                 cells.append(self.paint(padded, code))
             print(' │ '.join(cells))
         line(headers, True)
@@ -101,17 +128,21 @@ class UI:
             self.table(['PACKAGE', 'VERSION', 'CHANNEL'], [[p.get('name', ''), p.get('version', ''), p.get('channel', '')] for p in packages[:20]])
             print('\n' + self.paint('Add --json for the full package inventory.', '2'))
         elif action == 'status':
-            self.table(['DEVICE', 'SSH', 'READY FOR JOBS', 'RAM FREE', 'GPU'], [[d['name'], 'online' if d.get('online') else 'offline', 'ready' if d.get('ready') else 'blocked' if d.get('blocked') else ('needs prepare' if d.get('prepared') else 'needs add') if d.get('online') else '—', f"{d['memory_available_gib']:.1f} GiB" if 'memory_available_gib' in d else '—', ', '.join(g['name'] for g in d.get('gpus', [])) or '—'] for d in data['devices']])
+            self.resources(data['devices'])
             for d in data['devices']:
                 if d.get('error'):
                     self.message(f"{d['name']}: {d['error']}", False)
-            print('\n' + self.paint('SSH online ≠ free GPU. Use inspect DEVICE before running heavy work.', '2'))
+            print('\n' + self.paint('Memory: GiB free/total (RAM: available). CPU(T): logical threads.','2'))
+            print(self.paint('SSH online ≠ free GPU. Use inspect DEVICE before running heavy work.', '2'))
         elif action in ('jobs','dashboard'):
             records=data['jobs']
-            self.table(['DEVICE','NAME','STATE','PHASE','PURPOSE'],[[r.get('device',''),r.get('name',r['id']),r['state'],r.get('phase') or '—',r.get('summary') or r.get('description') or 'No description (legacy job)'] for r in records])
+            rows=[[r.get('device',''),r.get('name',r['id']),r['state'],r.get('phase') or '—',r.get('summary') or r.get('description') or 'No description (legacy job)'] for r in records]
+            rows += [[d['name'],'loading…','loading…','loading…','Waiting for job list'] for d in data.get('devices',[]) if d.get('jobs_loading')]
+            self.table(['DEVICE','NAME','STATE','PHASE','PURPOSE'],rows)
             if action=='dashboard':
                 print('\n'+self.paint('DEVICES','1;36'))
-                self.table(['DEVICE','SSH','RAM AVAILABLE','GPU VRAM USED / TOTAL','ACTIVE JOBS'],[[d['name'],'online' if d.get('online') else 'offline',f"{d.get('memory_available_gib','?')} / {d.get('memory_total_gib','?')} GiB",', '.join(f"{(g['total_mib']-g['free_mib'])/1024:.1f}/{g['total_mib']/1024:.1f} GiB" for g in d.get('gpus',[])) or '—',d.get('active_jobs','unknown')] for d in data['devices']])
+                self.resources(data['devices'],jobs=True)
+                print(self.paint('Memory: GiB free/total (RAM: available). CPU(T): logical threads.','2'))
             for device in data.get('devices',[]):
                 if device.get('jobs_error'): self.message(device['name']+': '+device['jobs_error'],False)
             print('\n'+self.paint('Observed '+data['observed_at']+' · '+('history included' if data['include_history'] else 'active jobs only; use --all for history'),'2'))
@@ -146,7 +177,8 @@ class UI:
         elif action == 'logs':
             print(sanitize(data['log']) or '(no output yet)')
         elif action == 'inspect':
-            self.table(['PROPERTY', 'VALUE'], [[k, data.get(k, '—')] for k in ('hostname', 'os', 'python', 'cpu_count', 'memory_available_gib', 'disk_free_gib', 'conda', 'tmux', 'linger')])
+            self.table(['PROPERTY', 'VALUE'], [[k, 'loading…' if k in data.get('loading_fields',[]) else data.get(k, '—')] for k in ('hostname', 'os', 'python', 'cpu_count', 'memory_available_gib', 'disk_free_gib', 'conda', 'tmux', 'linger')])
+            if 'gpus' in data.get('loading_fields',[]): self.message('GPU: loading…',False)
             if data.get('gpus'):
                 print('\n' + self.paint('GPU', '1;36'))
                 self.table(['NAME', 'VRAM FREE / TOTAL', 'UTILIZATION'], [[g['name'], f"{g['free_mib']} / {g['total_mib']} MiB", f"{g['utilization']}%"] for g in data['gpus']])

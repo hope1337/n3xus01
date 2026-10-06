@@ -16,7 +16,7 @@ SCHEMA = 1
 OWNER = 'personal-device-cli'
 MAX_ARCHIVE = 64 * 1024 * 1024
 EXCLUDE = {'.git', '.cluster', '.cache', 'workspace', 'communication', '.venv', 'venv', 'node_modules', '__pycache__', '.ssh', '.aws', '.codex', '.agents', 'datasets', 'checkpoints'}
-SECRET_PATTERNS = ('.env', '.env.*', '*.pem', '*.key', 'id_rsa*', 'id_ed25519*', 'devices.json', 'devices.yml', 'kubeconfig*')
+SECRET_PATTERNS = ('.env', '.env.*', '*.pem', '*.key', 'id_rsa*', 'id_ed25519*', 'devices.json', 'devices.yml', 'kubeconfig*', '.n3xus-project.json')
 
 class DeviceError(Exception):
     def __init__(self, message, code='operation_failed'):

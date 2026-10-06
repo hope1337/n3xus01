@@ -2,15 +2,17 @@
 from __future__ import annotations
 import argparse
 import base64
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
+import queue
 from pathlib import Path
 import shlex
 import shutil
 import subprocess
 import sys
 import time
+import threading
 import urllib.error
 import urllib.request
 import uuid
@@ -18,6 +20,7 @@ from device_common import DeviceError, SCHEMA, archive_payload, atomic_json, nam
 from device_ui import UI, init_terminal
 import device_workspace as workspace
 import device_install as installation
+import device_progress as progress
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT / 'workspace'
@@ -49,18 +52,31 @@ def config():
 
 def overview(conf, device=None, include_all=False):
     items = [(device,selected(conf,device))] if device else list(conf['devices'].items())
-    def inspect(item):
+    values = [({'name':identity,'loading':True,'jobs_loading':True},[]) for identity,_ in items]
+    lock = threading.RLock()
+    def snapshot():
+        return {'observed_at':workspace.now(),'devices':[d for d,_ in values],'jobs':[j for _,records in values for j in records],'include_history':include_all}
+    progress.publish('dashboard',snapshot())
+    def partial(index, information):
+        with lock:
+            values[index] = ({'name':items[index][0],**information,'jobs_loading':True},[])
+            progress.publish('dashboard',snapshot())
+    def inspect(index,item):
         identity, entry = item
         try:
-            data = remote(entry,conf['profile'],'overview',all=include_all)
+            data = remote(entry,conf['profile'],'overview',_on_progress=lambda data:partial(index,data),all=include_all)
             information = {'name':identity,**data['device']}
             if data.get('jobs_error'): information['jobs_error'] = data['jobs_error']
             return information,[{'device':identity,**record} for record in data['jobs']]
         except DeviceError as exc:
             return {'name':identity,'online':exc.code not in ('ssh_failed','ssh_timeout','ssh_missing','protocol_error'),'ready':False,'error':str(exc),'jobs_error':str(exc)},[]
     with ThreadPoolExecutor(max_workers=8) as pool:
-        values = list(pool.map(inspect,items))
-    return {'observed_at':workspace.now(),'devices':[d for d,_ in values],'jobs':[j for _,records in values for j in records],'include_history':include_all}
+        futures = {pool.submit(inspect,index,item):index for index,item in enumerate(items)}
+        for future in as_completed(futures):
+            with lock:
+                values[futures[future]] = future.result()
+                progress.publish('dashboard',snapshot())
+    return snapshot()
 
 def ssh_arguments(entry, *, interactive=False):
     executable = shutil.which('ssh')
@@ -73,8 +89,58 @@ def ssh_arguments(entry, *, interactive=False):
         args.extend(['-i', str(Path(entry['key']).expanduser())])
     return [*args, f"{entry['user']}@{entry['address']}"]
 
-def remote(entry, profile, operation, **arguments):
+def streamed_rpc(argv, body, timeout, callback):
+    """Read progress lines while draining both SSH pipes; keep one final response."""
+    process = subprocess.Popen(argv,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    events = queue.Queue()
+    errors = []
+    def stdout_reader():
+        try:
+            for line in process.stdout: events.put(line)
+        finally:
+            events.put(None)
+    def stderr_reader():
+        errors.append(process.stderr.read())
+    def stdin_writer():
+        try:
+            process.stdin.write(body)
+        except (BrokenPipeError,OSError):
+            pass  # SSH failure is reported through exit code/stderr.
+        finally:
+            try: process.stdin.close()
+            except OSError: pass
+    readers = [threading.Thread(target=stdout_reader),threading.Thread(target=stderr_reader),threading.Thread(target=stdin_writer)]
+    for thread in readers: thread.start()
+    deadline = time.monotonic()+timeout
+    final = None
+    try:
+        while True:
+            remaining = deadline-time.monotonic()
+            if remaining<=0: raise subprocess.TimeoutExpired(argv,timeout)
+            try: line=events.get(timeout=remaining)
+            except queue.Empty as exc: raise subprocess.TimeoutExpired(argv,timeout) from exc
+            if line is None: break
+            try: event=json.loads(line.decode('utf-8'))
+            except (ValueError,UnicodeError) as exc: raise DeviceError('Device returned unexpected streaming output.','protocol_error') from exc
+            if final is None and isinstance(event,dict) and event.get('event')=='probe_progress' and event.get('schema')==SCHEMA and isinstance(event.get('data'),dict):
+                callback(event['data'])
+            elif isinstance(event,dict) and 'ok' in event and final is None:
+                final=line
+            else: raise DeviceError('Unexpected SSH progress response.','protocol_error')
+        process.wait(timeout=max(.001,deadline-time.monotonic()))
+        for thread in readers: thread.join()
+        if final is None and process.returncode==0: raise DeviceError('Device returned no final response.','protocol_error')
+        return subprocess.CompletedProcess(argv,process.returncode,final or b'',b''.join(errors))
+    finally:
+        if process.poll() is None: process.kill()
+        process.wait()
+        for thread in readers: thread.join()
+        for pipe in (process.stdin,process.stdout,process.stderr): pipe.close()
+
+def remote(entry, profile, operation, _on_progress=None, **arguments):
     request = {'profile': profile, 'operation': operation, **arguments}
+    stream = progress.enabled() and operation in ('probe','overview')
+    if stream: request['_progress']=True
     if entry.get('conda'):
         request['conda'] = entry['conda']
     body = {'common': (ROOT / 'scripts/device_common.py').read_text(encoding='utf-8'),
@@ -83,7 +149,13 @@ def remote(entry, profile, operation, **arguments):
     timeout = 1860 if operation.startswith('env_') and operation not in ('env_list', 'env_inspect') else 90 if operation in ('sync', 'serve', 'prepare', 'fetch') else 35
     try:
         # Bytes prevent Windows CRLF conversion and preserve arbitrary Unicode.
-        result = subprocess.run(argv, input=json.dumps(body, ensure_ascii=False).encode('utf-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
+        with progress.operation(f"{entry['address']} · {operation}",clear_snapshot=_on_progress is None):
+            payload = json.dumps(body,ensure_ascii=False).encode('utf-8')
+            if stream:
+                callback = _on_progress or (lambda data:progress.publish('inspect',data))
+                result = streamed_rpc(argv,payload,timeout,callback)
+            else:
+                result = subprocess.run(argv, input=payload, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         raise DeviceError('SSH operation timed out. An already-submitted job/service continues; inspect before retrying a mutation.', 'ssh_timeout') from exc
     except OSError as exc:
@@ -142,15 +214,32 @@ def add_device(args):
             'next': 'n3xus status' if information['ready'] else f'n3xus prepare {device} --install-tools'}
 
 def status(conf):
-    def inspect(item):
+    items = list(conf['devices'].items())
+    values = [{'name':device,'loading':True} for device,_ in items]
+    lock = threading.RLock()
+    progress.publish('status',{'devices':values})
+    def partial(index,data):
+        with lock:
+            values[index]={'name':items[index][0],**data}
+            progress.publish('status',{'devices':values})
+    def inspect(index,item):
         device, entry = item
         try:
-            return {'name': device, **remote(entry, conf['profile'], 'probe')}
+            return {'name': device, **remote(entry, conf['profile'], 'probe',_on_progress=lambda data:partial(index,data))}
         except DeviceError as exc:
             connected = exc.code not in ('ssh_missing', 'ssh_failed', 'ssh_timeout', 'protocol_error')
             return {'name': device, 'online': connected, 'ready': False, 'blocked': connected, 'error': str(exc), 'error_code': exc.code}
     with ThreadPoolExecutor(max_workers=8) as pool:
-        return {'devices': list(pool.map(inspect, conf['devices'].items()))}
+        futures = {pool.submit(inspect,index,item):index for index,item in enumerate(items)}
+        for future in as_completed(futures):
+            with lock:
+                values[futures[future]] = future.result()
+                progress.publish('status',{'devices':values})
+    return {'devices':values}
+
+def terminal_execute(args):
+    with progress.terminal(args.color, enabled=not args.json):
+        return execute(args)
 
 def install_tools(args, entry):
     if not args.install_tools and not args.enable_linger:
@@ -168,7 +257,12 @@ def install_tools(args, entry):
         raise DeviceError('Device preparation failed. Read its output and retry; SSH/driver/conda were not reconfigured.', 'prepare_failed')
 
 def fetch_files(args, entry, profile):
-    destination = Path(args.output).expanduser().absolute()
+    root=workspace.find_project(args.project_dir,ROOT)
+    if args.output:
+        destination=workspace.project_path(root,args.output)
+    else:
+        folders=workspace.agent(root,args.agent or 'human')
+        destination=Path(folders['downloads'])/f'{args.device}-{name(args.id)}'
     if destination.exists():
         raise DeviceError('Output directory already exists. Choose a new directory; existing files are never overwritten.', 'already_exists')
     response = remote(entry, profile, 'fetch', id=args.id, path=args.path)
@@ -190,8 +284,9 @@ def health(entry, profile, service_name, path):
     endpoint = record['endpoint'] + path
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
     try:
-        with opener.open(endpoint, timeout=10) as response:
-            code = response.status
+        with progress.operation('Checking service HTTP response'):
+            with opener.open(endpoint, timeout=10) as response:
+                code = response.status
     except urllib.error.HTTPError as exc:
         code = exc.code
     except (OSError, urllib.error.URLError) as exc:
@@ -210,10 +305,13 @@ def parser():
     cli = ArgumentParser(prog='n3xus', description='Your devices. Your code. Direct SSH — no cluster, no images.')
     cli.add_argument('--json', action='store_true', help='one JSON response, no colors/prompts')
     cli.add_argument('--color', choices=('auto', 'always', 'never'), default='auto')
+    cli.add_argument('--project-dir',help='local project root; otherwise discover its marker from cwd/parents')
     commands = cli.add_subparsers(dest='action')
     setup = commands.add_parser('setup',help='prepare host and register the device command in user PATH')
     setup.add_argument('--no-register',action='store_true',help='prepare config only; do not install launchers or change user PATH')
     commands.add_parser('unregister',help='remove this checkout\'s global command only; preserve config and remote work')
+    project=commands.add_parser('project',help='initialize or locate a separate local workload project')
+    project.add_argument('operation',choices=('init','show'))
     for action in ('status', 'doctor'):
         commands.add_parser(action)
     demo = commands.add_parser('demo',help='fake data, no SSH')
@@ -289,7 +387,8 @@ def parser():
             command.add_argument('--yes', action='store_true')
         else:
             command.add_argument('--path', help='relative DIRECTORY within this job workspace; default outputs')
-            command.add_argument('--output', required=True)
+            command.add_argument('--output',help='destination inside local project; default communication/agents/AGENT/downloads/DEVICE-JOB')
+            command.add_argument('--agent',help='downloads owner; defaults to human')
     service = commands.add_parser('service')
     service.add_argument('device')
     service.add_argument('operation', choices=('start', 'stop', 'remove', 'check'))
@@ -307,7 +406,7 @@ def parser():
     return cli
 
 def arguments(argv):
-    # --json/--color can be before or after subcommand, never inside program argv.
+    # Global options can be before/after subcommand, never inside program argv.
     payload = []
     if '--' in argv:
         position = argv.index('--')
@@ -317,10 +416,10 @@ def arguments(argv):
     while index < len(argv):
         if argv[index] == '--json':
             global_args.append(argv[index])
-        elif argv[index] == '--color' and index + 1 < len(argv):
+        elif argv[index] in ('--color','--project-dir') and index + 1 < len(argv):
             global_args.extend(argv[index:index + 2])
             index += 1
-        elif argv[index].startswith('--color='):
+        elif argv[index].startswith(('--color=','--project-dir=')):
             global_args.append(argv[index])
         else:
             rest.append(argv[index])
@@ -335,7 +434,7 @@ def execute(args):
             raise DeviceError('Host needs Python 3.10+; conda Python is fine.')
         if not shutil.which('ssh'):
             raise DeviceError('Host needs OpenSSH client. Prepare SSH keys/known_hosts yourself.')
-        workspace.initialize(WORKSPACE)
+        workspace.initialize_host(WORKSPACE)
         if CONFIG.exists() and LEGACY_CONFIG.exists() and CONFIG == WORKSPACE/'config/devices.json':
             if read_json(CONFIG) != read_json(LEGACY_CONFIG):
                 raise DeviceError('Both config files exist with different data. Resolve them manually; no profile was replaced.', 'config_conflict')
@@ -355,26 +454,31 @@ def execute(args):
         return 'setup', {'ready': True, 'python': sys.version.split()[0], 'config': str(CONFIG), 'registered':registration['registered'], 'command_directory':registration.get('bin'), 'note':registration['note'], 'next': 'n3xus add'}
     if args.action == 'unregister':
         return 'unregister',installation.unregister(ROOT,WORKSPACE)
+    if args.action=='project':
+        if args.operation=='init': return 'project',workspace.init_project(args.project_dir,ROOT)
+        root=workspace.find_project(args.project_dir,ROOT)
+        return 'project',workspace.project_info(root,ROOT)
     if args.action == 'doctor':
         return 'doctor', {'python': sys.version.split()[0], 'ssh': shutil.which('ssh'), 'config_exists': CONFIG.exists(), 'native_host': sys.platform, 'wsl_required': False}
     if args.action == 'demo':
         if args.view=='dashboard':
-            return 'dashboard', {'observed_at':'DEMO / FAKE DATA / NO SSH','include_history':False,'devices':[{'name':'demo-device','online':True,'active_jobs':1,'memory_available_gib':24,'memory_total_gib':32,'gpus':[{'total_mib':24576,'free_mib':6144}]}],'jobs':[{'device':'demo-device','id':'job-'+'a'*16,'name':'llm-example','state':'running','phase':'serving','description':'Example LLM service (fake data)'}]}
-        return 'status', {'devices': [{'name': 'sekiro', 'online': True, 'ready': True, 'memory_available_gib': 27.4, 'gpus': [{'name': 'RTX 4090 · 22 GiB free'}]}, {'name': 'genichiro', 'online': True, 'ready': True, 'memory_available_gib': 12.1, 'gpus': [{'name': 'RTX 2080 Ti · 10 GiB free'}]}, {'name': 'lab-01', 'online': False, 'ready': False}]}
+            return 'dashboard', {'observed_at':'DEMO / FAKE DATA / NO SSH','include_history':False,'devices':[{'name':'demo-device','online':True,'active_jobs':1,'cpu_count':24,'memory_available_gib':24,'memory_total_gib':32,'gpus':[{'name':'RTX 4090','total_mib':24576,'free_mib':6144}]}],'jobs':[{'device':'demo-device','id':'job-'+'a'*16,'name':'llm-example','state':'running','phase':'serving','description':'Example LLM service (fake data)'}]}
+        return 'status', {'devices': [{'name': 'sekiro', 'online': True, 'ready': True, 'cpu_count': 24, 'memory_available_gib': 27.4, 'memory_total_gib': 31.1, 'gpus': [{'name': 'RTX 4090', 'free_mib': 22528, 'total_mib': 24576}]}, {'name': 'genichiro', 'online': True, 'ready': True, 'cpu_count': 8, 'memory_available_gib': 12.1, 'memory_total_gib': 31.1, 'gpus': [{'name': 'RTX 2080 Ti', 'free_mib': 10240, 'total_mib': 11264}]}, {'name': 'lab-01', 'online': False, 'ready': False}]}
     if args.action == 'add':
         return 'add', add_device(args)
     if args.action=='communication':
+        root=workspace.find_project(args.project_dir,ROOT)
         if args.operation=='init':
             if not args.agent: raise DeviceError('Provide an agent ID, e.g. codex-20261006-a1.')
-            return 'communication_init',workspace.agent(WORKSPACE,args.agent)
-        if args.operation=='show': return 'communication',workspace.show(WORKSPACE,args.agent)
+            return 'communication_init',workspace.agent(root,args.agent)
+        if args.operation=='show': return 'communication',workspace.show(root,args.agent)
         if args.operation=='note':
             if not args.agent or not args.title or bool(args.message)==bool(args.message_file):
                 raise DeviceError('Provide AGENT --title and exactly one of --message / --message-file.')
-            message=Path(args.message_file).read_text(encoding='utf-8') if args.message_file else args.message
-            return 'communication_note',workspace.note(WORKSPACE,args.agent,args.title,message,args.device,args.job)
+            message=workspace.project_path(root,args.message_file).read_text(encoding='utf-8') if args.message_file else args.message
+            return 'communication_note',workspace.note(root,args.agent,args.title,message,args.device,args.job)
         result=overview(config(),include_all=True)
-        return 'communication_snapshot',workspace.snapshot(WORKSPACE,result)
+        return 'communication_snapshot',workspace.project_snapshot(root,result)
     conf = config()
     if args.action == 'status':
         return 'status', status(conf)
@@ -398,8 +502,12 @@ def execute(args):
         install_tools(args, entry)
         return 'inspect', call('prepare')
     if args.action == 'sync':
-        return 'sync', call('sync', project=name(args.project), **archive_payload(pack_directory(Path(args.source).expanduser())))
+        root=workspace.find_project(args.project_dir,ROOT)
+        source=workspace.project_path(root,args.source)
+        if source==root: raise DeviceError('Sync a dedicated code directory, not the entire project.','unsafe_path')
+        return 'sync', call('sync', project=name(args.project), **archive_payload(pack_directory(source)))
     if args.action in ('run', 'serve'):
+        root=workspace.find_project(args.project_dir,ROOT)
         if not args.command:
             raise DeviceError('Put program arguments after --. Example: run DEVICE PROJECT --env ENV -- python -u main.py')
         if args.gpu is not None and not 0 <= args.gpu <= 31:
@@ -411,21 +519,23 @@ def execute(args):
             kwargs.update(name=args.name,description=args.description,agent=args.agent)
             if args.agent and (not args.name or not args.description.strip()):
                 raise DeviceError('Agent submissions require --name and --description so humans can understand the job.')
-            if args.agent: workspace.agent(WORKSPACE,args.agent)
+            if args.agent: workspace.agent(root,args.agent)
         result=call(args.action, **kwargs)
-        if args.action=='run':
-            try:
-                workspace.receipt(WORKSPACE,args.device,result)
-            except (OSError,DeviceError) as exc:
-                result['warning']='Job submitted; local receipt could not be saved: '+str(exc)+'. Inspect its ID before retrying.'
+        try:
+            if args.action=='run': workspace.receipt(root,args.device,result)
+            else: workspace.receipt(root,args.device,result,kind='service')
+        except (OSError,DeviceError) as exc:
+            result['warning']=('Job' if args.action=='run' else 'Service')+' submitted; local receipt could not be saved: '+str(exc)+'. Inspect its ID/name before retrying.'
         return args.action,result
     if args.action=='job': return 'job',call('job_detail',id=args.id)
     if args.action=='job-note':
-        if args.agent: workspace.agent(WORKSPACE,args.agent)
+        if args.agent:
+            root=workspace.find_project(args.project_dir,ROOT)
+            workspace.agent(root,args.agent)
         result=call('job_note',id=args.id,**{k:getattr(args,k) for k in ('name','description','summary','phase','progress','agent')})
         if args.agent:
             try:
-                workspace.note(WORKSPACE,args.agent,'Job update: '+result['name'],result.get('summary') or result.get('description') or result.get('phase') or 'Job metadata updated.',args.device,result['id'])
+                workspace.note(root,args.agent,'Job update: '+result['name'],result.get('summary') or result.get('description') or result.get('phase') or 'Job metadata updated.',args.device,result['id'])
             except (OSError,DeviceError) as exc:
                 result['warning']='Device metadata updated; local handoff note could not be saved: '+str(exc)
         return 'job',result
@@ -450,7 +560,9 @@ def execute(args):
                 return 'wait', data
             if time.monotonic() >= deadline:
                 raise DeviceError('Wait timed out. Job was not stopped; inspect jobs/logs or wait again.', 'wait_timeout')
-            time.sleep(min(2, max(0, deadline - time.monotonic())))
+            progress.publish('job',data)
+            with progress.operation(f'Waiting for job {args.id}',clear_snapshot=True):
+                time.sleep(min(2, max(0, deadline - time.monotonic())))
     if args.action == 'service':
         if args.operation == 'check':
             result = health(entry, conf['profile'], args.name, args.path)
@@ -494,9 +606,9 @@ def menu():
             if choice=='7':
                 from device_dashboard import watch
                 board_args=arguments(argv)
-                watch(board_args,lambda:execute(board_args)[1],execute,arguments)
+                watch(board_args,lambda:terminal_execute(board_args)[1],terminal_execute,arguments)
                 continue
-            action, data = execute(arguments(argv))
+            action, data = terminal_execute(arguments(argv))
             ui.render(action, data)
         except DeviceError as exc:
             ui.message(str(exc), False)
@@ -530,13 +642,13 @@ def main(argv=None):
             return 0
         if args.action=='dashboard' and not args.json and not args.once and sys.stdin.isatty() and sys.stdout.isatty():
             from device_dashboard import watch
-            watch(args,lambda:execute(args)[1],execute,arguments)
+            watch(args,lambda:terminal_execute(args)[1],terminal_execute,arguments)
             return 0
         if args.action=='logs' and args.follow:
             from device_dashboard import follow_logs
-            follow_logs(args,execute)
+            follow_logs(args,terminal_execute)
             return 0
-        action, data = execute(args)
+        action, data = terminal_execute(args)
         if args.json:
             print(json.dumps({'schema': SCHEMA, 'ok': True, 'action': action, 'data': data}, ensure_ascii=False))
         else:

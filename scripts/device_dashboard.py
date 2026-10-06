@@ -6,7 +6,35 @@ import shutil
 import sys
 import time
 from device_common import DeviceError
-from device_ui import UI
+from device_ui import UI, crop
+import device_progress as progress
+
+def refreshing_snapshot(previous, incoming):
+    """Retain only explicitly pending observations; final errors replace them."""
+    if previous is None:
+        return incoming
+    old_devices={device['name']:device for device in previous['devices']}
+    devices=[]; jobs=[]
+    for current in incoming['devices']:
+        identity=current['name']; old=old_devices.get(identity,{})
+        pending=current.get('loading') or current.get('jobs_loading') or bool(current.get('loading_fields'))
+        if current.get('loading') and old and not old.get('loading'):
+            device={**old,'refreshing':True}
+        else:
+            device=dict(current)
+            fields=list(current.get('loading_fields',[]))
+            for field in fields[:]:
+                if field in old:
+                    device[field]=old[field]; fields.remove(field)
+            device['loading_fields']=fields
+            if current.get('jobs_loading') and 'active_jobs' in old:
+                device['active_jobs']=old['active_jobs']
+                device.pop('jobs_loading',None)
+            device['refreshing']=bool(pending)
+        devices.append(device)
+        records=previous['jobs'] if current.get('loading') or current.get('jobs_loading') else incoming['jobs']
+        jobs.extend(record for record in records if record['device']==identity and (incoming['include_history'] or record['state'] in ('queued','running')))
+    return {**incoming,'devices':devices,'jobs':jobs}
 
 @contextmanager
 def keyboard():
@@ -60,19 +88,27 @@ class Selection:
         self.identity=(record['device'],record['id'])
         return record
 
-def draw(data,selection,ui):
+def draw(data,selection,ui,refreshing=None):
     print('\033[H\033[2J',end='')
     ui.header('LIVE DEVICES / JOBS')
-    print(ui.paint('Observed '+data['observed_at']+' · SSH polling, not cached state','2'))
-    ui.table(['DEVICE','SSH','RAM AVAILABLE','GPU VRAM USED / TOTAL','ACTIVE JOBS'],[[d['name'],'online' if d.get('online') else 'offline',f"{d.get('memory_available_gib','?')} / {d.get('memory_total_gib','?')} GiB",', '.join(f"{(g['total_mib']-g['free_mib'])/1024:.1f}/{g['total_mib']/1024:.1f} GiB" for g in d.get('gpus',[])) or '—', d.get('active_jobs','unknown')] for d in data['devices'][:6]])
+    label='Observed '+data['observed_at']+' · SSH polling, not cached state'
+    if refreshing is not None:
+        pending=', '.join(d['name'] for d in data['devices'] if d.get('refreshing') or d.get('loading') or d.get('jobs_loading') or d.get('loading_fields'))
+        label=refreshing+' Refreshing'+(' '+pending if pending else '')+' · previous values retained while waiting' if pending else 'Refresh complete'
+    print(ui.paint(crop(label,ui.columns),'33' if refreshing is not None else '2'))
+    device_rows=ui.resources(data['devices'][:6],jobs=True)
     jobs=data['jobs']; selection.choose(jobs)
     current=selection.index(jobs)
-    budget=max(1,shutil.get_terminal_size((110,24)).lines-14-min(6,len(data['devices'])))
+    budget=max(1,shutil.get_terminal_size((110,24)).lines-15-device_rows)
     start=max(0,current-budget+1)
     print('\n'+ui.paint('JOBS · '+('including history' if data['include_history'] else 'active only'),'1;36'))
-    ui.table(['','DEVICE','NAME','STATE','PHASE / PURPOSE'],[['›' if selection.identity==(r['device'],r['id']) else '',r['device'],r.get('name',r['id']),r['state'],(r.get('phase','')+' · ' if r.get('phase') else '')+(r.get('summary') or r.get('description') or 'No description (legacy job)')] for r in jobs[start:start+budget]])
+    rows=[['›' if selection.identity==(r['device'],r['id']) else '',r['device'],r.get('name',r['id']),r['state'],(r.get('phase','')+' · ' if r.get('phase') else '')+(r.get('summary') or r.get('description') or 'No description (legacy job)')] for r in jobs[start:start+budget]]
+    if not jobs:
+        rows=[['',d['name'],'loading…','loading…','Waiting for job list'] for d in data['devices'] if d.get('loading') or d.get('jobs_loading')]
+    ui.table(['','DEVICE','NAME','STATE','PHASE / PURPOSE'],rows)
     print('\n'+ui.paint('j/k select · i details · l logs · s stop · d delete · h history · r refresh · q quit','2'))
     print(ui.paint('Notes/progress are reported by agents, not automatic execution status.','2'))
+    print(ui.paint('Memory: GiB free/total (RAM: available). CPU(T): logical threads.','2'))
     for device in data['devices']:
         if device.get('jobs_error'): ui.message(device['name']+': '+device['jobs_error'],False)
     sys.stdout.flush()
@@ -86,7 +122,19 @@ def watch(args,fetch,execute,parse):
             refresh=True; data=None; deadline=0
             while True:
                 if refresh or time.monotonic()>=deadline:
-                    data=fetch(); deadline=time.monotonic()+args.interval; refresh=False
+                    previous=data
+                    def updating(snapshot,spinner):
+                        if snapshot is not None and snapshot[0]=='dashboard':
+                            view=refreshing_snapshot(previous,snapshot[1])
+                        elif previous is not None:
+                            view={**previous,'devices':[{**d,'refreshing':True} for d in previous['devices']]}
+                        else:
+                            return
+                        draw(view,selection,ui,refreshing=spinner)
+                    if previous is not None: updating(None,'|')
+                    with progress.terminal(args.color,renderer=updating):
+                        data=fetch()
+                    deadline=time.monotonic()+args.interval; refresh=False
                     draw(data,selection,ui)
                 key=read_key(min(.2,max(.01,deadline-time.monotonic())))
                 if key in ('q','\x03'): return

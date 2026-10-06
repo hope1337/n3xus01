@@ -1,5 +1,8 @@
 # Khi có lỗi
 
+- Project chưa rõ: vào project đã chọn rồi chạy `n3xus project init` một lần; `project show` xác nhận đường dẫn. Nếu CLI đang chạy từ nơi khác, thêm `--project-dir PATH`. Không init trong repo CLI. Không có project thì status/inspect/jobs vẫn dùng được, nhưng các lệnh ghi dữ liệu công việc sẽ từ chối.
+- Job cũ không hiện trong communication snapshot: snapshot chỉ lấy job có receipt của project. Dùng jobs/job để kiểm tra live và ghi ID liên quan vào handoff; không cần restart job hoặc di chuyển config device.
+
 `n3xus doctor` kiểm tra host; `n3xus status`, `inspect DEVICE` kiểm tra SSH và device. Lỗi nói rõ mã/bước; agent dùng --json.
 
 - SSH failed/offline: thử `ssh USER@TAILSCALE_IP`, xem Tailscale/key/known_hosts ở OS host hiện tại. Không tự xóa known_hosts để bypass cảnh báo.

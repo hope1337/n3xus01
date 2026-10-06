@@ -104,6 +104,10 @@ def conda_json(request, arguments, timeout=60):
     except ValueError as exc:
         raise DeviceError('Conda did not return JSON; inspect its configuration/output.') from exc
 
+def report_probe(request, data):
+    if request.get('_progress') and request.get('operation') in ('probe','overview'):
+        print(json.dumps({'schema':SCHEMA,'event':'probe_progress','data':data},ensure_ascii=False),flush=True)
+
 def probe(request):
     if sys.version_info < (3, 10) or sys.platform != 'linux':
         raise DeviceError('Device needs Linux with Python 3.10+ (Ubuntu 22.04 or newer).', 'unsupported_device')
@@ -123,6 +127,13 @@ def probe(request):
             os_release[key] = value.strip('"')
     gpus = []
     warnings = []
+    info = {'online':True,'prepared':prepared,'ready':prepared and bool(shutil.which('tmux')),
+            'hostname':socket.gethostname(),'tailscale_ip':address,'os':os_release.get('PRETTY_NAME','Linux'),
+            'python':platform.python_version(),'cpu_count':os.cpu_count(),
+            'memory_total_gib':round(memory.get('MemTotal',0),2),'memory_available_gib':round(memory.get('MemAvailable',0),2),
+            'disk_free_gib':round(shutil.disk_usage(Path.home()).free/1024**3,2),'tmux':bool(shutil.which('tmux')),
+            'loading_fields':['gpus','conda','linger']}
+    report_probe(request,info)
     if shutil.which('nvidia-smi'):
         gpu = command(['nvidia-smi', '--query-gpu=name,memory.total,memory.free,utilization.gpu', '--format=csv,noheader,nounits'], check=False, timeout=10)
         if gpu.returncode == 0:
@@ -135,14 +146,20 @@ def probe(request):
                         warnings.append('GPU metrics unavailable for one device.')
         else:
             warnings.append('nvidia-smi failed; driver is left unchanged.')
+    info.update(gpus=gpus,loading_fields=['conda','linger'])
+    report_probe(request,info)
     try:
         conda = find_conda(request)
     except DeviceError:
         conda = None
+    info.update(conda=conda,loading_fields=['linger'])
+    report_probe(request,info)
     linger = command(['loginctl', 'show-user', str(os.getuid()), '--property=Linger', '--value'], check=False).stdout.strip() if shutil.which('loginctl') else 'unknown'
     tmux = bool(shutil.which('tmux'))
     if linger != 'yes':
         warnings.append('Linger is not enabled. Services need it for boot/after logout; job survival also depends on login policy.')
+    info.update(linger=linger,loading_fields=[])
+    report_probe(request,info)
     return {'online': True, 'prepared': prepared, 'ready': prepared and tmux, 'hostname': socket.gethostname(), 'tailscale_ip': address,
             'os': os_release.get('PRETTY_NAME', 'Linux'), 'python': platform.python_version(), 'cpu_count': os.cpu_count(),
             'memory_total_gib': round(memory.get('MemTotal', 0), 2), 'memory_available_gib': round(memory.get('MemAvailable', 0), 2),

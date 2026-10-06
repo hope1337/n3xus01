@@ -3,7 +3,7 @@
 Offline tests không SSH. Flow thật cần user đã chuẩn bị SSH/Tailscale:
 
 1. setup → add một device → prepare tmux/linger → status/check/inspect. Không đổi driver/Conda sẵn có.
-2. sync examples/hello → run → wait/logs → fetch. Nội dung hello.txt đúng; exit failed được báo, không giả success.
+2. Tạo project ngoài repo CLI, chạy project init; copy examples/hello vào PROJECT/src. sync src → run → wait/logs → fetch --agent human. Nội dung hello.txt trong project downloads đúng; exit failed được báo, không giả success. Thử từ thư mục con và từ nơi khác với --project-dir; context sai phải chặn trước khi gửi job.
 3. Gửi một task foreground chạy đủ lâu; tắt host terminal, mở lại jobs/logs, task còn chạy. Stop đúng task; tmux cá nhân giữ nguyên.
 4. Sync revision mới trong khi job cũ chạy: workspace cũ không bị sửa. Job hoàn tất rồi clean sau khi fetch; output đã tải giữ nguyên.
 5. Conda list/inspect env đã có; dùng env với run. Với user approval, plan/install env test hoặc create/remove một managed env. Không chạm base/driver.

@@ -1,59 +1,68 @@
-# Agent: sử dụng CLI, không chỉnh sửa công cụ
+# Agent CLI usage — use the tool, do not edit it
 
-Đọc AGENTS.md trước. User giao task không tự cấp quyền sửa repo. Mặc định chỉ sử dụng; code task ở workspace/communication/agents/ID/work, kết quả vào downloads, ghi chú qua communication. Sau khi user setup đăng ký PATH, dùng `n3xus` từ mọi thư mục. Nếu process hiện tại chưa nhận PATH, Windows dùng đường dẫn tuyệt đối tới n3xus.ps1 của repo, Ubuntu tới device; không suy ra repo từ cwd. Thêm --json trước dấu --; phản hồi schema/ok/action/data hoặc error. Exit 0 nghĩa thao tác thành công, không nhất thiết job hoàn tất. Help vẫn là văn bản. Không mở dashboard/watch interactive trong agent.
+New agents start at [START_HERE.md](../START_HERE.md). Read AGENTS.md first. A workload request does not authorize CLI repository edits. Source belongs in the human-selected project (src/ or your work folder); scratch/results/notes belong in PROJECT/communication/agents/ID. Shared handoff belongs in PROJECT/communication/shared. The CLI repository stores shared device config only, never new task data.
 
-## Bắt đầu phiên
+Use `n3xus` from any directory after user setup. If PATH is stale, use this repo's absolute n3xus.ps1 (Windows) or n3xus (Ubuntu), never assume cwd is the repo. Put --json before the program's -- separator. Responses contain schema/ok/action/data or error. Exit 0 means the operation succeeded, not necessarily that a job finished. Help is text. Never open interactive dashboard/watch/menu from an agent.
 
-```powershell
-.\n3xus.ps1 communication init codex-20261006-a1 --json
-.\n3xus.ps1 communication show --json
-.\n3xus.ps1 status --json
-.\n3xus.ps1 dashboard --once --json
-.\n3xus.ps1 inspect sekiro --json
-.\n3xus.ps1 env list sekiro --json
-.\n3xus.ps1 env inspect sekiro TEN_ENV --json
+## Start a session
+
+The human creates a separate project outside the CLI repo and runs `n3xus project init` once. The marker is discovered from cwd/parents; explicit --project-dir selects an initialized root. If no project is resolved, report the missing context instead of creating one in arbitrary cwd. Project init preserves existing files/identity and appends /communication/ to .gitignore. Read the current project's SUMMARY.md/notes, not the CLI repo's legacy workspace handoff. Commands below assume cwd is in the selected project; append --project-dir PATH when elsewhere.
+
+```text
+n3xus project show --json
+n3xus communication init codex-20261006-a1 --json
+n3xus communication show --json
+n3xus status --json
+n3xus dashboard --once --json
+n3xus inspect DEVICE --json
+n3xus env list DEVICE --json
+n3xus env inspect DEVICE ENV --json
 ```
 
-ID riêng mỗi phiên, không dùng folder của agent trước để ghi mới. Snapshot/handoff cũ phải được đối chiếu live. Chỉ các device đã đăng ký được hiển thị; CLI không quét toàn tailnet tự nhận máy lạ. Không đọc key/password/legacy kubeconfig để lấy status.
+Use a fresh session ID; do not write into earlier agents' folders. Recheck saved handoff/snapshots against live state. Only registered devices appear; the CLI does not scan the tailnet and adopt unknown machines. Never read keys/passwords/legacy kubeconfig for status.
 
-## Gửi việc dễ hiểu
+## Submit understandable work
 
-Viết code vào work/TASK; inspect secret và dependency. Không sửa examples hay scripts để viết workload. Tên job nên nói mục đích, mô tả một câu. Nếu --agent có mặt thì CLI yêu cầu --name và --description.
+Write code in your work/TASK folder; inspect secrets and dependencies. Do not modify examples/scripts to create workloads. Give jobs a meaningful name and one-sentence purpose. Supplying --agent requires --name and --description.
 
-```powershell
-.\n3xus.ps1 sync sekiro workspace/communication/agents/codex-20261006-a1/work/pdf-extract --project pdf-extract --json
-.\n3xus.ps1 run sekiro pdf-extract --name extract-pdfs --description 'Đọc PDF và xuất text' --agent codex-20261006-a1 --env TEN_ENV --json -- python -u main.py
-.\n3xus.ps1 job sekiro extract-pdfs --json
-.\n3xus.ps1 logs sekiro extract-pdfs --json
+Relative source/output/message-file paths resolve from the project root, even from nested directories or with explicit --project-dir. Paths must stay inside that project. Replace DEVICE/ENV/JOB_ID and the illustrative agent ID:
+
+```text
+n3xus sync DEVICE communication/agents/codex-20261006-a1/work/pdf-extract --project my-project-pdf --json
+n3xus run DEVICE my-project-pdf --name extract-pdfs --description "Extract PDF text" --agent codex-20261006-a1 --env ENV --json -- python -u main.py
+n3xus job DEVICE extract-pdfs --json
+n3xus logs DEVICE extract-pdfs --json
 ```
 
-Lưu ID trả về. Trên một device, tên không trùng với job active; lịch sử có thể trùng tên nên dùng ID nếu ambiguous. jobs mặc định active; jobs --all xem lịch sử mọi máy. Mỗi job có workspace riêng của revision đã sync; agent chạy sau không sửa code của job trước.
+Keep the returned ID. Names must be unique among active jobs on a device; duplicate historical names require the ID. jobs defaults to active jobs across devices; jobs --all includes history. Sync creates immutable revisions; each job takes its own workspace copy. Do not change another running job's code.
 
-```powershell
-.\n3xus.ps1 job-note sekiro JOB_ID --summary 'Đã xử lý 40/100 file theo log' --phase extracting --progress 40 --agent codex-20261006-a1 --json
+```text
+n3xus job-note DEVICE JOB_ID --summary "Logs confirm 40 of 100 files processed" --phase extracting --progress 40 --agent codex-20261006-a1 --json
 ```
 
-Summary/phase/progress là thông tin do agent chịu trách nhiệm, có note_author/note_updated_at; không đoán phần trăm từ thời gian. State/observed_at là đọc live. Tiến trình running có thể đang chờ; API phải request thật để kết luận ready. Job cũ thiếu name/description có thể được đặt lại qua job-note; không restart để đổi mô tả.
+Summary/phase/progress are your reports with note_author/note_updated_at. Do not infer percentages from elapsed time. State/observed_at are checked live. A running process may be waiting; make a real API request before claiming readiness. Rename/describe legacy jobs via job-note without restarting them.
 
-Wait/logs/fetch/stop/clean chấp nhận ID hoặc tên không ambiguous. --follow là terminal-only; agent lấy log snapshots. Wait timeout giữ job. Fetch default DEVICE_OUTPUT_DIR; --path là thư mục tương đối trong workspace job. Fetch không overwrite, max64MiB. Không tự clean lịch sử/results; user intent + confirmation, fetch trước.
+Wait/logs/fetch/stop/clean accept ID or unambiguous name. --follow is terminal-only; agents read log snapshots. Wait timeout leaves jobs running. Fetch defaults to DEVICE_OUTPUT_DIR; --path is a relative directory inside the job workspace. Fetch refuses overwrite, max 64 MiB. Never auto-clean history/results: require user intent and confirmation, and fetch first.
 
-## Dependencies và privileges
+`fetch DEVICE JOB_ID --agent ID --json` downloads to PROJECT/communication/agents/ID/downloads/DEVICE-JOB_ID. Explicit --output must be inside the project and should point to your own downloads folder. Run/serve save local receipts under communication/runs; a receipt failure after successful submission is a warning, never retry the job blindly. The remote project label (sync --project / run PROJECT) is distinct from the local --project-dir: use a meaningful label unique across projects sharing this device profile. Existing remote jobs/revisions are not renamed/migrated.
 
-Inspect Conda trước. `env plan DEVICE ENV --package pypdf --pip --json` không cài vào env nhưng solver có thể cập nhật cache. Hỏi user trước install/create/remove; chỉ thêm --yes sau khi được đồng ý. Không đổi base/driver, accept channel terms hay nâng pip tự động. Kiểm tra env dùng bởi external notebook với user; CLI chỉ biết managed jobs/services.
+## Dependencies and privileges
 
-Chạy --gpu INDEX chỉ chọn CUDA device, không reservation. Kiểm tra sử dụng GPU trước và không dừng training riêng. Không mở public listener. prepare --install-tools/--enable-linger có thể cần sudo password nhập ở terminal; chat approval không tự cung cấp password. Báo blocker, không skip và báo task done.
+Inspect Conda before changing it. `env plan DEVICE ENV --package pypdf --pip --json` does not install into the env, but the solver can update its cache. Ask before install/create/remove; use --yes only after approval. Do not change base/driver, silently accept channel terms or automatically upgrade pip. Check with the user whether external notebooks use the env; the CLI only detects its managed jobs/services.
+
+--gpu INDEX selects CUDA_VISIBLE_DEVICES, not a reservation. Inspect GPU use and never stop unrelated training. No public listeners. prepare --install-tools/--enable-linger may require a sudo password in a terminal; chat approval does not supply it. Report the blocked step; do not skip it and claim success.
 
 ## Handoff
 
-```powershell
-.\n3xus.ps1 communication note codex-20261006-a1 --title 'PDF extraction handoff' --message-file workspace/communication/agents/codex-20261006-a1/work/handoff.txt --device sekiro --job JOB_ID --json
-.\n3xus.ps1 communication snapshot --json
+```text
+n3xus communication note codex-20261006-a1 --title "PDF extraction handoff" --message-file communication/agents/codex-20261006-a1/work/handoff.txt --device DEVICE --job JOB_ID --json
+n3xus communication snapshot --json
 ```
 
-Nội dung note: mục tiêu, device/project/job ID, tiến trình đã kiểm tra lúc nào, kết quả ở đâu, lệnh/log chứng minh, approval đã có, phần chưa xong và cách tiếp tục. Notes có file riêng nên agent khác không ghi đè. Snapshot có timestamp và cả offline/errors; không lấy snapshot làm bằng chứng live. shared/SUMMARY.md dành cho ngữ cảnh bền vững, không xóa phần người khác. Never secrets. Runtime toàn bộ ở workspace, không force-add vào Git.
+Include objective, device/project/job ID, observation time, result location, evidence, approvals, remaining work and next action. Unique note files prevent overwrites. Project snapshots list only jobs with this project's local receipts; device metrics/counts and jobs/dashboard remain global. Legacy jobs without receipts require an explicit relevant handoff note; never silently adopt them. Snapshots are historical. shared/SUMMARY.md is durable context; preserve others' content. Never store secrets or force-add communication data to Git. Old CLI workspace data is left untouched; do not read/migrate it unless requested.
 
-Service systemd tùy chọn: serve cần linger và {bind}/{port}; logs DEVICE NAME --service; service check từ host phải thành công. Không bypass guards bằng cách sửa source/helper. Direct SSH read-only diagnostics được phép nếu cần; mutation ngoài CLI cần user intent và ghi lại. Không tạo hệ quản lý job song song bằng tmux thủ công rồi gọi là managed job.
+Optional systemd services: serve requires linger and {bind}/{port}; logs DEVICE NAME --service reads journal logs. service check from the host must succeed. Do not patch source/helpers to bypass guards. Read-only SSH diagnostics are allowed when needed; mutations outside the CLI require user intent and documentation. Do not create a parallel manager with manual tmux jobs and claim they are managed.
 
-Host offline: job vẫn chạy theo login policy, agent không tiếp tục suy nghĩ. Device reboot: tmux job interrupted, systemd có thể restart. Không auto-retry mutation timeout; inspect job/service trước để tránh duplicate.
+Host offline: jobs continue subject to login policy, but the agent stops thinking. Device reboot interrupts tmux jobs; systemd services may restart. After a mutation timeout, inspect before retrying to avoid duplicates.
 
-User setup mặc định cài launcher/PATH trên host, không SSH. Không tự chạy unregister hoặc thay checkout của global command trong tác vụ workload. Source/output path tương đối theo cwd; config/workspace theo vị trí repo. `setup --no-register` dành cho kiểm thử/host không muốn đổi PATH.
+User setup installs host launchers/PATH without SSH. Do not unregister or change the global checkout for workloads. Config/profile and registration receipts remain shared in CLI workspace/config; projects never re-register devices. Status/inspect/jobs/env reads need no project. setup --no-register is available for hosts that do not want PATH changes. Report in Vietnamese unless requested otherwise.

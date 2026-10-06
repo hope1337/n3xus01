@@ -6,7 +6,7 @@ Clone repo rồi setup theo README. SSH thủ công vào user@TAILSCALE_IP một
 
 Giữ cùng workspace/config/devices.json khi đổi OS (profile phải giữ nguyên). Chỉnh key path nếu có. `setup` không ghi đè config cũ. Repo không lấy config/secret K3s cũ; Dữ liệu cũ của phiên làm việc này được chuyển vào workspace/legacy/ và vẫn ngoài Git; không đọc hay xóa credential cũ. CLI không tự gom mọi thư mục tùy ý khi setup.
 
-Nếu PowerShell chặn .ps1, có thể dùng `python scripts/device_cli.py setup` và các lệnh tương tự. Không đổi execution policy toàn máy. Trên Ubuntu, nếu checkout thiếu executable bit: `chmod +x device` một lần; hoặc gọi `python3 scripts/device_cli.py`.
+Nếu PowerShell chặn .ps1, có thể dùng `python scripts/device_cli.py setup` và các lệnh tương tự. Không đổi execution policy toàn máy. Trên Ubuntu, nếu checkout thiếu executable bit: `chmod +x n3xus` một lần; hoặc gọi `python3 scripts/device_cli.py`.
 
 ## Lệnh n3xus ở mọi thư mục
 
