@@ -6,6 +6,8 @@ Push-Location $repo
 try {
     & python -m unittest discover -s tests -p 'test_device.py' -k WindowsLauncherTests -v
     if ($LASTEXITCODE -ne 0) { throw 'Native Windows argument transport failed' }
+    & python -m unittest discover -s tests -p 'test_install.py' -k test_windows_global_command -v
+    if ($LASTEXITCODE -ne 0) { throw 'Global Windows command transport failed' }
     & powershell.exe -NoProfile -File (Join-Path $repo 'device.ps1') doctor --json
     if ($LASTEXITCODE -ne 0) { throw 'Native Windows doctor failed' }
     & powershell.exe -NoProfile -File (Join-Path $repo 'device.ps1') demo --color never

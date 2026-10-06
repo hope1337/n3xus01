@@ -13,7 +13,7 @@ for directory in ('scripts','tests','examples'):
         if b'\r\n' in path.read_bytes(): errors.append(f'{path.name}: expected LF')
 for path in [ROOT/'device',ROOT/'device.ps1']:
     if b'\r\n' in path.read_bytes(): errors.append(f'{path.name}: expected LF')
-for required in ('device','device.ps1','scripts/device_cli.py','scripts/device_remote.py','scripts/device_dashboard.py','scripts/device_workspace.py','workspace/README.md','README.md','AGENTS.md','docs/agent-usage.md','docs/validation.md'):
+for required in ('device','device.ps1','scripts/device_cli.py','scripts/device_remote.py','scripts/device_install.py','scripts/device_dashboard.py','scripts/device_workspace.py','workspace/README.md','README.md','AGENTS.md','docs/agent-usage.md','docs/validation.md'):
     if not (ROOT/required).is_file(): errors.append('Missing '+required)
 for path in [ROOT/'README.md',*(ROOT/'docs').glob('*.md')]:
     for target in re.findall(r'\]\(([^)]+)\)',path.read_text(encoding='utf-8')):

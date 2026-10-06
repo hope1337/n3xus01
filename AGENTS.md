@@ -10,7 +10,7 @@ No subagents unless the user explicitly requests delegation. No commit unless re
 
 ## Where agents write
 
-All host-side task code, scratch files, downloaded results, reports and agent memory MUST stay under `workspace/`. Never scatter scripts/reports in the repository root, scripts/, examples/, docs/, .cache/ or arbitrary temp folders. Test-suite temporary files are an exception: isolated OS temp directories, removed by tests. Files in other user projects can be changed only when that user task authorizes it; do not copy their data into shared notes.
+All host-side task code, scratch files, downloaded results, reports and agent memory MUST stay under `workspace/`. Never scatter scripts/reports in the repository root, scripts/, examples/, docs/, .cache/ or arbitrary temp folders. User-authorized setup registration has one exception: command launchers in the user bin directory, and managed user PATH/startup blocks; receipts remain in workspace/config. Do not put agent memory/task code there. Test-suite temporary files are an exception: isolated OS temp directories, removed by tests. Files in other user projects can be changed only when that user task authorizes it; do not copy their data into shared notes.
 
 Start a session with a unique agent ID (lowercase letters/digits/hyphens, <=48 chars), e.g. codex-20261006-a1. Run `communication init ID`. Use `workspace/communication/agents/ID/work/` for code and scratch, `downloads/` for fetched results, `notes/` for private session notes. Do not edit another agent's folder. This is organization, not access isolation/encryption.
 
@@ -45,6 +45,7 @@ Systemd service features are optional beyond the core tmux workflow. Require lin
 ## Maintainer map and verification (only with explicit user request)
 
 - device / device.ps1: stdlib Python launchers; native Windows JSON/base64 argv, no key copies/global policy/WSL.
+- scripts/device_install.py: owned user launchers, HKCU PATH on Windows, marked Bash startup PATH on Ubuntu; no packages/admin. setup registers by default; unregister keeps device config/remote work.
 - scripts/device_cli.py: validated config, native SSH JSON RPC, command routing, multi-device snapshots.
 - scripts/device_common.py: safe paths/private atomic JSON/bounded archives; scripts/device_remote.py: owner-checked Linux helper/tmux runners/optional systemd.
 - scripts/device_workspace.py: host runtime, agent folders, unique handoff notes; scripts/device_dashboard.py: native terminal keys/polling; scripts/device_ui.py: colors/tables/sanitized output.

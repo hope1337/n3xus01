@@ -82,12 +82,12 @@ class UI:
         self.header(action.replace('_', ' ').upper())
         entry = '.\\device.ps1' if os.name == 'nt' else './device'
         if action in ('setup', 'add', 'run', 'serve', 'fetch'):
-            keys = {'setup': ('ready', 'config', 'next'), 'add': ('device', 'ready', 'conda', 'next'), 'run': ('id', 'name', 'description', 'state', 'project', 'outputs', 'note'), 'serve': ('name', 'state', 'endpoint', 'listening', 'note'), 'fetch': ('id', 'downloaded_to')}[action]
+            keys = {'setup': ('ready', 'config', 'registered', 'command_directory', 'note', 'next'), 'add': ('device', 'ready', 'conda', 'next'), 'run': ('id', 'name', 'description', 'state', 'project', 'outputs', 'note'), 'serve': ('name', 'state', 'endpoint', 'listening', 'note'), 'fetch': ('id', 'downloaded_to')}[action]
             for key in keys:
                 if key in data:
                     value = data[key]
                     if key == 'next':
-                        value = str(value).replace('device ', entry + ' ', 1)
+                        value = str(value) if action=='setup' and data.get('registered') else str(value).replace('device ', entry + ' ', 1)
                     print(self.paint(key.replace('_', ' ') + ': ', '36') + sanitize(value))
             if action == 'run':
                 print('\n' + self.paint('Use jobs / logs / wait to follow this ID. Host may disconnect.', '2'))

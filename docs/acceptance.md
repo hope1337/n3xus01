@@ -21,3 +21,7 @@ Record OS/version, commands, outcomes in validation.md. Không chạy reboot, pa
 - communication init cho hai agent, note mỗi agent và show chung. Snapshot ghi thời điểm, không ghi đè SUMMARY.md; không lấy snapshot cũ làm trạng thái live.
 - Setup lại giữ profile/registration và không SSH. Chuyển config root cũ sang workspace/config; config xung đột phải báo lỗi và giữ cả hai.
 - Dashboard trên Windows và terminal Ubuntu thật: phím ↑/↓/j/k, màu, refresh, q/Ctrl+C phục hồi cursor. Offline tests chỉ mô phỏng vòng phím; cần nghiệm thu terminal thực để xác nhận trải nghiệm.
+
+## Global CLI
+
+Run setup from repo, then move to another directory and run device doctor/demo; config must remain the same. On Windows verify PowerShell/CMD and user PATH without admin. On Ubuntu verify fresh Bash terminal and source ~/.bashrc. Setup again creates no duplicate PATH/startup entries. Unregister removes only owned launchers/managed blocks, preserving later PATH/profile edits, config and remote jobs. Modified launcher must refuse overwrite/delete. Re-run setup after moving checkout. These are host-only checks; do not stop device jobs.

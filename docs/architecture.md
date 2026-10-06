@@ -13,3 +13,7 @@ Workspace host chứa communication/shared và communication/agents/ID/{work,dow
 Immutable sync revisions + per-job copies tránh sửa job đang chạy. Secret exclusions chỉ giúp tránh lỗi phổ biến; không scanner. Dataset/model lớn giữ disk device. No GPU scheduling/quota/sandbox/pool/backup. Conda existing env inspect/reuse; managed env max8 không phải disk quota. Cache/code/results/journal vẫn chiếm disk.
 
 Systemd-user service là tính năng tùy chọn: linger + owned unit fingerprint + Tailnet bind + foreground runner monitor, KillMode=control-group, Restart=on-failure. Không auth/TLS tự động. Runner kiểm tra port configured; untrusted app có thể mở port khác, nên đây không network sandbox. Endpoint cần real check, active chưa đủ.
+
+## Command registration
+
+Setup installs user launchers pointing to the checkout and the resolved Python executable. Windows PowerShell launcher delegates to the repository argv-preserving launcher; CMD is also available. Linux shim execs Python with literal argv. Only user PATH/startup blocks are changed; registration does not SSH. Markers encode public paths and the generated body must match before replacement/removal. Runtime receipt stays in workspace/config; global launcher location is the sole host-runtime placement exception. Unknown/manual-modified files are preserved and reported. unregister affects only the current checkout registration; profile/config/remote state are independent.

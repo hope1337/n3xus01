@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$deviceArguments = @($args)
+$deviceArguments = @($args | ForEach-Object { [string]$_ })
 # .ps1 invocation may consume --; restore it before the program argv.
 $actionPosition = -1
 for ($i = 0; $i -lt $deviceArguments.Count; $i++) {
@@ -19,7 +19,7 @@ if ($actionPosition -ge 0 -and $deviceArguments.Count -gt ($actionPosition + 3) 
         break
     }
 }
-$python = Get-Command python.exe -ErrorAction SilentlyContinue
+$python = if ($env:DEVICE_PYTHON_EXECUTABLE) { Get-Command -Name $env:DEVICE_PYTHON_EXECUTABLE -CommandType Application -ErrorAction SilentlyContinue } else { Get-Command python.exe -ErrorAction SilentlyContinue }
 if (-not $python -or $python.Source -like '*WindowsApps*') {
     $python = Get-Command py.exe -ErrorAction SilentlyContinue
 }
@@ -34,6 +34,16 @@ try {
         & $python.Source (Join-Path $PSScriptRoot 'scripts/device_cli.py')
     }
     $deviceExit = $LASTEXITCODE
+    if ($deviceExit -eq 0 -and $actionPosition -ge 0 -and $deviceArguments[$actionPosition] -in @('setup', 'unregister')) {
+        $deviceBin = Join-Path $env:LOCALAPPDATA 'PersonalDevice\bin'
+        $pathEntries = @($env:PATH -split ';' | Where-Object { $_.TrimEnd('\') -ine $deviceBin.TrimEnd('\') })
+        if ((Test-Path -LiteralPath (Join-Path $deviceBin 'device.ps1')) -and $deviceArguments -notcontains '--no-register') {
+            $env:PATH = ($pathEntries + @($deviceBin)) -join ';'
+        } elseif ($deviceArguments[$actionPosition] -eq 'unregister') {
+            $userEntries = @([Environment]::GetEnvironmentVariable('Path', 'User') -split ';' | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') })
+            $env:PATH = if ($userEntries -icontains $deviceBin.TrimEnd('\')) { ($pathEntries + @($deviceBin)) -join ';' } else { $pathEntries -join ';' }
+        }
+    }
 } finally {
     $env:DEVICE_ARGUMENTS_BASE64 = $previous
 }

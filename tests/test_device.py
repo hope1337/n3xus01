@@ -33,7 +33,10 @@ class Temporary(unittest.TestCase):
         self.path = Path(self.temp.name)
         self.workspace_patch = patch.object(cli, 'WORKSPACE', self.path / 'workspace')
         self.workspace_patch.start()
+        self.install_patch = patch.object(cli.installation,'register',return_value={'registered':True,'bin':'test-only','note':'test only'})
+        self.install_patch.start()
     def tearDown(self):
+        self.install_patch.stop()
         self.workspace_patch.stop()
         self.temp.cleanup()
     def owned(self):

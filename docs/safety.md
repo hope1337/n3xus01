@@ -10,3 +10,5 @@
 - stop chỉ nhắm process group với PID identity còn khớp; clean chỉ job đã kết thúc và không có runner. Service unit kiểm tra fingerprint trước control/remove. Không động vào tmux/systemd cá nhân.
 - Logs job giữ tối đa khoảng 3×8 MiB, output/code không tự xóa. Conda cache/journal do công cụ tương ứng quản lý. clean sẽ xóa đúng outputs/logs/workspace sau xác nhận; fetch trước.
 - Không có backup/HA/coordinator. Mất disk device có thể mất state/results; ổ local không phải backup.
+
+- Host setup mặc định đăng ký global CLI: launcher riêng cho user, HKCU PATH trên Windows hoặc marked PATH block trong .profile/.bashrc trên Ubuntu. Không system PATH/admin/pip/execution-policy changes. setup --no-register tránh các thay đổi này. Unregister chỉ gỡ launcher khớp template và block nguyên vẹn, không xóa config hoặc remote state; giữ PATH/profile khác của người dùng.

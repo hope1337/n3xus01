@@ -1,6 +1,6 @@
 # Agent: sử dụng CLI, không chỉnh sửa công cụ
 
-Đọc AGENTS.md trước. User giao task không tự cấp quyền sửa repo. Mặc định chỉ sử dụng; code task ở workspace/communication/agents/ID/work, kết quả vào downloads, ghi chú qua communication. Windows dùng .\device.ps1, Ubuntu ./device. Thêm --json trước dấu --; phản hồi schema/ok/action/data hoặc error. Exit 0 nghĩa thao tác thành công, không nhất thiết job hoàn tất. Help vẫn là văn bản. Không mở dashboard/watch interactive trong agent.
+Đọc AGENTS.md trước. User giao task không tự cấp quyền sửa repo. Mặc định chỉ sử dụng; code task ở workspace/communication/agents/ID/work, kết quả vào downloads, ghi chú qua communication. Sau khi user setup đăng ký PATH, dùng `device` từ mọi thư mục. Nếu process hiện tại chưa nhận PATH, Windows dùng đường dẫn tuyệt đối tới device.ps1 của repo, Ubuntu tới device; không suy ra repo từ cwd. Thêm --json trước dấu --; phản hồi schema/ok/action/data hoặc error. Exit 0 nghĩa thao tác thành công, không nhất thiết job hoàn tất. Help vẫn là văn bản. Không mở dashboard/watch interactive trong agent.
 
 ## Bắt đầu phiên
 
@@ -55,3 +55,5 @@ Nội dung note: mục tiêu, device/project/job ID, tiến trình đã kiểm t
 Service systemd tùy chọn: serve cần linger và {bind}/{port}; logs DEVICE NAME --service; service check từ host phải thành công. Không bypass guards bằng cách sửa source/helper. Direct SSH read-only diagnostics được phép nếu cần; mutation ngoài CLI cần user intent và ghi lại. Không tạo hệ quản lý job song song bằng tmux thủ công rồi gọi là managed job.
 
 Host offline: job vẫn chạy theo login policy, agent không tiếp tục suy nghĩ. Device reboot: tmux job interrupted, systemd có thể restart. Không auto-retry mutation timeout; inspect job/service trước để tránh duplicate.
+
+User setup mặc định cài launcher/PATH trên host, không SSH. Không tự chạy unregister hoặc thay checkout của global command trong tác vụ workload. Source/output path tương đối theo cwd; config/workspace theo vị trí repo. `setup --no-register` dành cho kiểm thử/host không muốn đổi PATH.

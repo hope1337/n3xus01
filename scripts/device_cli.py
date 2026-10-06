@@ -17,6 +17,7 @@ import uuid
 from device_common import DeviceError, SCHEMA, archive_payload, atomic_json, name, pack_directory, read_json, unpack, validate_device
 from device_ui import UI, init_terminal
 import device_workspace as workspace
+import device_install as installation
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT / 'workspace'
@@ -210,7 +211,10 @@ def parser():
     cli.add_argument('--json', action='store_true', help='one JSON response, no colors/prompts')
     cli.add_argument('--color', choices=('auto', 'always', 'never'), default='auto')
     commands = cli.add_subparsers(dest='action')
-    for action in ('setup', 'status', 'doctor'):
+    setup = commands.add_parser('setup',help='prepare host and register the device command in user PATH')
+    setup.add_argument('--no-register',action='store_true',help='prepare config only; do not install launchers or change user PATH')
+    commands.add_parser('unregister',help='remove this checkout\'s global command only; preserve config and remote work')
+    for action in ('status', 'doctor'):
         commands.add_parser(action)
     demo = commands.add_parser('demo',help='fake data, no SSH')
     demo.add_argument('--view',choices=('status','dashboard'),default='status')
@@ -347,7 +351,10 @@ def execute(args):
             else:
                 atomic_json(CONFIG, {'schema': SCHEMA, 'profile': uuid.uuid4().hex, 'devices': {}})
         config()
-        return 'setup', {'ready': True, 'python': sys.version.split()[0], 'config': str(CONFIG), 'next': 'device add'}
+        registration = installation.register(ROOT,WORKSPACE) if not args.no_register else {'registered':False,'note':'Skipped command registration (--no-register).'}
+        return 'setup', {'ready': True, 'python': sys.version.split()[0], 'config': str(CONFIG), 'registered':registration['registered'], 'command_directory':registration.get('bin'), 'note':registration['note'], 'next': 'device add'}
+    if args.action == 'unregister':
+        return 'unregister',installation.unregister(ROOT,WORKSPACE)
     if args.action == 'doctor':
         return 'doctor', {'python': sys.version.split()[0], 'ssh': shutil.which('ssh'), 'config_exists': CONFIG.exists(), 'native_host': sys.platform, 'wsl_required': False}
     if args.action == 'demo':
