@@ -82,7 +82,7 @@ class UI:
         self.header(action.replace('_', ' ').upper())
         entry = '.\\device.ps1' if os.name == 'nt' else './device'
         if action in ('setup', 'add', 'run', 'serve', 'fetch'):
-            keys = {'setup': ('ready', 'config', 'next'), 'add': ('device', 'ready', 'conda', 'next'), 'run': ('id', 'state', 'project', 'outputs', 'note'), 'serve': ('name', 'state', 'endpoint', 'listening', 'note'), 'fetch': ('id', 'downloaded_to')}[action]
+            keys = {'setup': ('ready', 'config', 'next'), 'add': ('device', 'ready', 'conda', 'next'), 'run': ('id', 'name', 'description', 'state', 'project', 'outputs', 'note'), 'serve': ('name', 'state', 'endpoint', 'listening', 'note'), 'fetch': ('id', 'downloaded_to')}[action]
             for key in keys:
                 if key in data:
                     value = data[key]
@@ -106,7 +106,38 @@ class UI:
                 if d.get('error'):
                     self.message(f"{d['name']}: {d['error']}", False)
             print('\n' + self.paint('SSH online ≠ free GPU. Use inspect DEVICE before running heavy work.', '2'))
-        elif action in ('jobs', 'services'):
+        elif action in ('jobs','dashboard'):
+            records=data['jobs']
+            self.table(['DEVICE','NAME','STATE','PHASE','PURPOSE'],[[r.get('device',''),r.get('name',r['id']),r['state'],r.get('phase') or '—',r.get('summary') or r.get('description') or 'No description (legacy job)'] for r in records])
+            if action=='dashboard':
+                print('\n'+self.paint('DEVICES','1;36'))
+                self.table(['DEVICE','SSH','RAM AVAILABLE','GPU VRAM USED / TOTAL','ACTIVE JOBS'],[[d['name'],'online' if d.get('online') else 'offline',f"{d.get('memory_available_gib','?')} / {d.get('memory_total_gib','?')} GiB",', '.join(f"{(g['total_mib']-g['free_mib'])/1024:.1f}/{g['total_mib']/1024:.1f} GiB" for g in d.get('gpus',[])) or '—',d.get('active_jobs','unknown')] for d in data['devices']])
+            for device in data.get('devices',[]):
+                if device.get('jobs_error'): self.message(device['name']+': '+device['jobs_error'],False)
+            print('\n'+self.paint('Observed '+data['observed_at']+' · '+('history included' if data['include_history'] else 'active jobs only; use --all for history'),'2'))
+            print(self.paint('Use job DEVICE NAME for the full ID, command, notes and recent log.','2'))
+            if data['include_history']:
+                print('\n'+self.paint('FULL IDS (use these when historical names repeat)','1;36'))
+                for record in records:
+                    print(sanitize(record['device']+' / '+record['id']+' / '+record.get('name',record['id'])))
+        elif action=='job':
+            for key in ('id','name','description','state','phase','progress','agent','project','env_name','gpu','elapsed_seconds','exit_code','summary','note_author','note_updated_at','observed_at','workspace','outputs'):
+                if key in data: print(self.paint(key.replace('_',' ')+': ','36')+sanitize(data[key]))
+            if 'command' in data: print(self.paint('command: ','36')+sanitize(json.dumps(data['command'],ensure_ascii=False)))
+            if 'recent_log' in data:
+                print('\n'+self.paint('RECENT LOG','1;36')); print(sanitize(data['recent_log']) or '(no output)')
+            if data.get('note_updated_at'): print(self.paint('Summary/phase/progress are dated agent notes; state is checked live.','2'))
+        elif action=='communication':
+            print(sanitize(data['summary']))
+            if data.get('snapshot'):
+                snapshot=data['snapshot']
+                print('\n'+self.paint('SAVED SNAPSHOT · '+snapshot['observed_at']+' · historical','1;33'))
+                self.table(['DEVICE','LAST SSH','LAST ACTIVE JOBS'],[[d['name'],'online' if d.get('online') else 'offline',d.get('active_jobs','unknown')] for d in snapshot['devices']])
+            self.table(['UPDATED','AGENT','TITLE'],[[n['updated_at'],n['agent'],n['title']] for n in data['notes']])
+            for note in data['notes'][:10]:
+                print('\n'+self.paint(note['title']+' · '+note['agent'],'1;36')); print(sanitize(note['message']))
+            self.message(data['warning'],False)
+        elif action == 'services':
             records = data[action]
             self.table(['ID / NAME', 'PROJECT', 'STATE', 'ENV', 'EXIT / ENDPOINT'], [[r.get('id', r.get('name', '')), r.get('project', ''), r.get('state', ''), r.get('env_name') or 'system', r.get('endpoint') or str(r.get('exit_code', '—'))] for r in records])
         elif action == 'env_list':
@@ -128,3 +159,5 @@ class UI:
                     print(sanitize(json.dumps(value, ensure_ascii=False, indent=2)))
                 else:
                     print(self.paint(key.replace('_', ' ') + ': ', '36') + sanitize(value))
+        if data.get('warning') and action not in ('communication',):
+            self.message(data['warning'],False)

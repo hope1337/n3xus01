@@ -1,23 +1,15 @@
-# Cấu trúc hoạt động
+# Cấu trúc
 
-```text
-Host (Windows hoặc Ubuntu)
-  agent / người dùng → device CLI → SSH qua Tailscale
-                                     └─ Ubuntu device
-                                          ├─ helper ngắn hạn
-                                          ├─ tmux: mỗi job một phiên riêng
-                                          ├─ systemd user: mỗi service một unit riêng
-                                          └─ code, state, logs, outputs trong home
-```
+Host Windows/Ubuntu chạy native Python stdlib + OpenSSH. CLI gửi JSON stdin tới một Python helper qua SSH/Tailscale; không giữ kết nối lâu, không có coordinator/server. Windows argv dùng JSON/base64 để giữ nguyên dấu quote/Unicode/$; không shell eval.
 
-Không có đầu sỏ; SSH là nơi nhận lệnh, đã do bạn chuẩn bị. Helper không mở port và kết thúc sau mỗi thao tác. Chỉ dịch vụ bạn yêu cầu host mới mở endpoint Tailscale.
+Config canonical: workspace/config/devices.json, schema/profile/devices. setup chuyển root devices.json cũ bằng rename sau validate, không tạo profile mới. Local receipts ở workspace/runs chỉ là lịch sử gửi. Remote state vẫn ~/.local/share/personal-device/PROFILE, ownership bằng UID/schema/profile, helper/unit fingerprints và private paths. Repo update không tự ghi lên remote helper hay restart job.
 
-`setup` kiểm tra Python/OpenSSH và tạo config. `add` đăng ký máy, gửi hai file helper vào thư mục riêng. `prepare` có hai lựa chọn rõ ràng: cài tmux và bật linger. Không cần môi trường Python riêng trên host.
+Một job tương ứng tmux session trên socket riêng. Record có ID, name/description/agent, revision, command/env/GPU, PID+startticks+bootID, state/log/output và dated notes. State đọc live; phase/progress không tự infer. Tmux kết thúc khi runner xong; metadata/log giữ tới clean. Mất process/reboot không coi là completed. Không auto-resume job, không quản lý session tmux cá nhân. Chương trình phải chạy foreground, không tự daemonize.
 
-Config là `devices.json`, có `profile` dùng chung giữa Windows/Ubuntu. Trạng thái trên mỗi device nằm tại `~/.local/share/personal-device/PROFILE/`: projects, jobs, services, envs. Máy khác nhau có trạng thái riêng. Host đọc trạng thái qua SSH; device offline thì không biết tình trạng mới nhất. Không báo cached state là trạng thái sống.
+Jobs mặc định active. Job name lookup ưu tiên active; history trùng tên yêu cầu ID. job_detail thêm log gần nhất; job_note ghi dưới file lock và không thay command/process. Dashboard polling một overview RPC/device, tối đa 8 device song song, ghi rõ observed/error; không dùng stale snapshot làm trạng thái live. Dashboard terminal dùng native keyboard, khôi phục cursor/terminal trong finally, các thao tác stop/delete phải xác nhận. Đóng dashboard không stop job.
 
-Mỗi lần sync tạo revision có checksum; run/serve chụp riêng revision đó. Sync sau không sửa job đang chạy. Job runner ghi PID + thời điểm tạo PID + boot ID, exit code và log. Không coi mất process/reboot là thành công. CLI theo dõi tiến trình chính/process group; chương trình tự daemonize/tách process có thể thoát quản lý, nên chạy foreground trong job/service. Tmux jobs không tự phục hồi sau reboot; systemd services có Restart=on-failure và enable lúc boot.
+Workspace host chứa communication/shared và communication/agents/ID/{work,downloads,notes}. Handoff notes dùng unique JSON filenames, tránh lost update giữa agent. snapshot.json/STATUS.md được thay nguyên file; SUMMARY.md không bị CLI overwrite. Folder riêng chỉ là tổ chức, không phân quyền bảo mật. Những dữ liệu này Git ignored; chỉ workspace/README.md tracked.
 
-Services dùng systemd user với quyền user, KillMode=control-group; cần linger. Bind vào Tailscale IP. Kiểm tra listener lúc launch và HTTP check từ host; chương trình tự mở port khác hoặc đổi bind sau đó nằm ngoài kiểm soát CLI. Không có firewall sandbox hoặc scheduler.
+Immutable sync revisions + per-job copies tránh sửa job đang chạy. Secret exclusions chỉ giúp tránh lỗi phổ biến; không scanner. Dataset/model lớn giữ disk device. No GPU scheduling/quota/sandbox/pool/backup. Conda existing env inspect/reuse; managed env max8 không phải disk quota. Cache/code/results/journal vẫn chiếm disk.
 
-Conda đã có trên device: CLI dùng executable tuyệt đối, chạy qua `conda run --prefix`, không activate shell. Env do CLI tạo ở PROFILE/envs; env cũ được inspect/reuse. Tối đa 8 managed env không phải quota dung lượng. Conda cache, code revisions, kết quả và journal cũng chiếm disk; inspect xem disk trống, clean job cũ sau khi tải kết quả. Không tự xóa dataset.
+Systemd-user service là tính năng tùy chọn: linger + owned unit fingerprint + Tailnet bind + foreground runner monitor, KillMode=control-group, Restart=on-failure. Không auth/TLS tự động. Runner kiểm tra port configured; untrusted app có thể mở port khác, nên đây không network sandbox. Endpoint cần real check, active chưa đủ.

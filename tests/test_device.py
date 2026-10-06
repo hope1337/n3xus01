@@ -31,7 +31,10 @@ class Temporary(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='device-test-')
         self.path = Path(self.temp.name)
+        self.workspace_patch = patch.object(cli, 'WORKSPACE', self.path / 'workspace')
+        self.workspace_patch.start()
     def tearDown(self):
+        self.workspace_patch.stop()
         self.temp.cleanup()
     def owned(self):
         root = self.path / ('a' * 32)
@@ -239,11 +242,11 @@ class WindowsLauncherTests(Temporary):
         candidates = [shutil.which('powershell.exe'), shutil.which('pwsh.exe')]
         for executable in filter(None, candidates):
             with self.subTest(executable=executable):
-                script = "& '" + str(self.path / 'device.ps1').replace("'","''") + "' --json run sekiro hello --env ml -- python -c 'print(\"$HOME; ü\")' 'a b'"
+                script = "& '" + str(self.path / 'device.ps1').replace("'","''") + "' --json run sekiro hello --env ml --name test --description 'test $HOME; ü' --agent tester -- python -c 'print(\"$HOME; ü\")' 'a b'"
                 result = subprocess.run([executable,'-NoProfile','-Command',script],capture_output=True, text=True, encoding='utf-8',errors='replace',timeout=30)
                 self.assertEqual(result.returncode,0,result.stderr)
                 payload = json.loads(result.stdout)
-                self.assertEqual(payload, ['--json','run','sekiro','hello','--env','ml','--','python','-c','print("$HOME; ü")','a b'])
+                self.assertEqual(payload, ['--json','run','sekiro','hello','--env','ml','--name','test','--description','test $HOME; ü','--agent','tester','--','python','-c','print("$HOME; ü")','a b'])
 
 @unittest.skipUnless(sys.platform == 'linux', 'real Linux runner integration')
 class LinuxRunnerTests(Temporary):

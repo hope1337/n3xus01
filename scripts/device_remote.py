@@ -358,6 +358,49 @@ def job_file(root, identifier):
         raise DeviceError('Job is not owned.', 'not_owned')
     return path, data
 
+def resolve_job(root, reference):
+    if re.fullmatch(r'job-[a-f0-9]{16}', reference):
+        job_file(root, reference)
+        return reference
+    name(reference)
+    matches = [job_file(root,p.parent.name)[1] for p in (root/'jobs').glob('*/job.json') if read_json(p).get('name') == reference]
+    active = [r for r in matches if job_state(root,r)['state'] in ('queued','running')]
+    choices = active or matches
+    if len(choices) != 1:
+        raise DeviceError('Job name missing or ambiguous. Use its full ID from jobs --all.', 'unknown_job')
+    return choices[0]['id']
+
+def job_note(request):
+    root = root_for(request)
+    with locked(root):
+        metadata, record = job_file(root, resolve_job(root,request['id']))
+        changed = False
+        for field in ('name','description','summary','phase','progress'):
+            value = request.get(field)
+            if value is None:
+                continue
+            if field == 'name':
+                value = name(value)
+                for path in (root/'jobs').glob('*/job.json'):
+                    other = read_json(path)
+                    if other['id'] != record['id'] and other.get('name') == value and job_state(root,other)['state'] in ('queued','running'):
+                        raise DeviceError('Another active job has that name.', 'duplicate_job_name')
+            elif field == 'progress':
+                if type(value) not in (int,float) or not 0 <= value <= 100:
+                    raise DeviceError('Progress must be 0-100.')
+            else:
+                clean_text(value)
+                if len(value)>2000: raise DeviceError('Job text limit: 2000 characters.')
+            record[field] = value
+            changed = True
+        if not changed:
+            raise DeviceError('Provide --summary, --phase, --progress, --name or --description.')
+        author = request.get('agent') or 'human'
+        name(author)
+        record.update(note_updated_at=now(),note_author=author)
+        atomic_json(metadata,record)
+    return job_state(root,record)
+
 def validate_argv(arguments):
     if not isinstance(arguments, list) or not arguments:
         raise DeviceError('Provide a program and arguments after --.')
@@ -388,12 +431,21 @@ def launch_job(request):
     with locked(root):
         prefix = resolve_env(request, request.get('env'))
         conda = find_conda(request) if prefix else None
+        label = name(request['name']) if request.get('name') else None
+        description = clean_text(request.get('description') or '')
+        if len(description) > 2000: raise DeviceError('Description limit: 2000 characters.')
+        author = name(request['agent']) if request.get('agent') else 'human'
+        if label:
+            for path in (root/'jobs').glob('*/job.json'):
+                old = read_json(path)
+                if old.get('name') == label and job_state(root,old)['state'] in ('queued','running'):
+                    raise DeviceError('Another active job has that name.', 'duplicate_job_name')
         identifier = 'job-' + uuid.uuid4().hex[:16]
         directory = safe_path(root / 'jobs' / identifier)
         directory.mkdir(mode=0o700)
         revision = project_snapshot(root, request['project'], directory / 'workspace')
         (directory / 'outputs').mkdir(mode=0o700)
-        record = {'owner': OWNER, 'id': identifier, 'project': request['project'], 'revision': revision, 'command': arguments,
+        record = {'owner': OWNER, 'id': identifier, 'name':label or identifier, 'description':description, 'agent':author, 'project': request['project'], 'revision': revision, 'command': arguments,
                   'env_path': prefix, 'env_name': request.get('env'), 'conda': conda, 'gpu': gpu, 'state': 'queued', 'created_at': now(),
                   'boot_id': boot_id(), 'workspace': str(directory / 'workspace'), 'outputs': str(directory / 'outputs')}
         atomic_json(directory / 'job.json', record)
@@ -404,7 +456,7 @@ def launch_job(request):
             record.update(state='failed', error=str(exc), finished_at=now())
             atomic_json(directory / 'job.json', record)
             raise
-    return {'id': identifier, 'state': 'queued', 'project': request['project'], 'outputs': record['outputs'], 'note': 'Submitted; jobs/logs/wait read live state. A job does not resume automatically after reboot.'}
+    return {'id': identifier, 'name':record['name'], 'description':description, 'agent':author, 'state': 'queued', 'project': request['project'], 'outputs': record['outputs'], 'note': 'Submitted; jobs/logs/wait read live state. A job does not resume automatically after reboot.'}
 
 def execution(record):
     args = record['command']
@@ -459,6 +511,15 @@ def run_job(root, identifier):
 
 def job_state(root, record):
     result = dict(record)
+    result.setdefault('name',record['id'])
+    result.setdefault('description','')
+    result['observed_at'] = now()
+    try:
+        start = datetime.fromisoformat(record.get('started_at',record['created_at']))
+        end = datetime.fromisoformat(record['finished_at']) if record.get('finished_at') else datetime.now(timezone.utc)
+        result['elapsed_seconds'] = max(0,int((end-start).total_seconds()))
+    except (ValueError,KeyError):
+        result['elapsed_seconds'] = None
     if record['state'] == 'running' and not alive(record):
         result.update(state='interrupted', reason='Process disappeared or device rebooted; not marked successful.')
     elif record['state'] == 'queued':
@@ -682,7 +743,21 @@ def dispatch(request):
     if operation == 'prepare':
         return prepare(request)
     root = root_for(request)
+    if operation == 'overview':
+        info = probe(request)
+        if not info['prepared']:
+            return {'device':info,'jobs':[],'jobs_error':'Device is not prepared for this profile.'}
+        records = [job_state(root,job_file(root,p.parent.name)[1]) for p in sorted((root/'jobs').glob('*/job.json'))]
+        active = sum(r['state'] in ('queued','running') for r in records)
+        return {'device':{**info,'active_jobs':active}, 'jobs':records if request.get('all') else [r for r in records if r['state'] in ('queued','running')]}
     require_owned(root)
+    if operation in ('job','job_detail','job_note','stop','clean','fetch') or (operation == 'logs' and not request.get('service')):
+        request = {**request,'id':resolve_job(root,request['id'])}
+    if operation == 'job_note':
+        return job_note(request)
+    if operation == 'job_detail':
+        record = job_state(root,job_file(root,request['id'])[1])
+        return {**record,'recent_log':logs({**request,'lines':20})['log']}
     if operation == 'sync':
         return sync_project(request)
     if operation == 'env_list':

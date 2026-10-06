@@ -16,15 +16,21 @@ import urllib.request
 import uuid
 from device_common import DeviceError, SCHEMA, archive_payload, atomic_json, name, pack_directory, read_json, unpack, validate_device
 from device_ui import UI, init_terminal
+import device_workspace as workspace
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / 'devices.json'
+WORKSPACE = ROOT / 'workspace'
+CONFIG = WORKSPACE / 'config/devices.json'
+LEGACY_CONFIG = ROOT / 'devices.json'
 BOOTSTRAP = "import json,sys,types; b=json.load(sys.stdin); m=types.ModuleType('device_common'); exec(compile(b['common'],'<device-common>','exec'),m.__dict__); sys.modules['device_common']=m; n={'__name__':'device_remote'}; exec(compile(b['helper'],'<device-helper>','exec'),n); r=b['request']; r['_common_source']=b['common']; r['_helper_source']=b['helper']; n['entrypoint'](r)"
 
 def config():
-    if not CONFIG.exists():
+    path = CONFIG
+    if not path.exists() and CONFIG == WORKSPACE/'config/devices.json' and LEGACY_CONFIG.exists():
+        path = LEGACY_CONFIG
+    if not path.exists():
         raise DeviceError('Run device setup first.', 'setup_required')
-    value = read_json(CONFIG)
+    value = read_json(path)
     if not isinstance(value, dict) or set(value) != {'schema', 'profile', 'devices'} or value['schema'] != SCHEMA:
         raise DeviceError('Invalid devices.json schema. Keep your profile ID when switching host OS.', 'invalid_config')
     import re
@@ -39,6 +45,21 @@ def config():
             raise DeviceError('Duplicate SSH destination in config.', 'invalid_config')
         destinations.add(destination)
     return value
+
+def overview(conf, device=None, include_all=False):
+    items = [(device,selected(conf,device))] if device else list(conf['devices'].items())
+    def inspect(item):
+        identity, entry = item
+        try:
+            data = remote(entry,conf['profile'],'overview',all=include_all)
+            information = {'name':identity,**data['device']}
+            if data.get('jobs_error'): information['jobs_error'] = data['jobs_error']
+            return information,[{'device':identity,**record} for record in data['jobs']]
+        except DeviceError as exc:
+            return {'name':identity,'online':exc.code not in ('ssh_failed','ssh_timeout','ssh_missing','protocol_error'),'ready':False,'error':str(exc),'jobs_error':str(exc)},[]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        values = list(pool.map(inspect,items))
+    return {'observed_at':workspace.now(),'devices':[d for d,_ in values],'jobs':[j for _,records in values for j in records],'include_history':include_all}
 
 def ssh_arguments(entry, *, interactive=False):
     executable = shutil.which('ssh')
@@ -189,8 +210,10 @@ def parser():
     cli.add_argument('--json', action='store_true', help='one JSON response, no colors/prompts')
     cli.add_argument('--color', choices=('auto', 'always', 'never'), default='auto')
     commands = cli.add_subparsers(dest='action')
-    for action in ('setup', 'status', 'doctor', 'demo'):
+    for action in ('setup', 'status', 'doctor'):
         commands.add_parser(action)
+    demo = commands.add_parser('demo',help='fake data, no SSH')
+    demo.add_argument('--view',choices=('status','dashboard'),default='status')
     add = commands.add_parser('add', help='register SSH device and install a small owned helper, without sudo')
     add.add_argument('name', nargs='?')
     for field in ('address', 'user', 'key', 'conda'):
@@ -199,8 +222,31 @@ def parser():
     remove = commands.add_parser('remove', help='forget local registration only; remote jobs/data remain')
     remove.add_argument('device')
     remove.add_argument('--yes', action='store_true')
-    for action in ('inspect', 'check', 'jobs', 'services'):
+    for action in ('inspect', 'check', 'services'):
         commands.add_parser(action).add_argument('device')
+    jobs = commands.add_parser('jobs',help='active jobs; omit DEVICE to see all registered devices')
+    jobs.add_argument('device',nargs='?')
+    jobs.add_argument('--all',action='store_true',help='include finished/stopped history')
+    board = commands.add_parser('dashboard',help='live terminal board; q exit, j/k select, i details, l logs, s stop, d delete, h history')
+    board.add_argument('device',nargs='?')
+    board.add_argument('--all',action='store_true')
+    board.add_argument('--once',action='store_true')
+    board.add_argument('--interval',type=float,default=5)
+    for action in ('job','job-note'):
+        detail=commands.add_parser(action)
+        detail.add_argument('device')
+        detail.add_argument('id',help='job ID or unambiguous name')
+        if action=='job-note':
+            for option in ('name','description','summary','phase','agent'): detail.add_argument('--'+option)
+            detail.add_argument('--progress',type=float)
+    communication=commands.add_parser('communication',help='agent work folders, append-only handoff notes and saved snapshots')
+    communication.add_argument('operation',choices=('init','note','show','snapshot'))
+    communication.add_argument('agent',nargs='?')
+    communication.add_argument('--title')
+    communication.add_argument('--message')
+    communication.add_argument('--message-file')
+    communication.add_argument('--device')
+    communication.add_argument('--job')
     prepare = commands.add_parser('prepare')
     prepare.add_argument('device')
     prepare.add_argument('--install-tools', action='store_true')
@@ -216,6 +262,10 @@ def parser():
         launch.add_argument('project')
         launch.add_argument('--env')
         launch.add_argument('--gpu', type=int)
+        if action=='run':
+            launch.add_argument('--name',help='human-readable job name; unique among active jobs on this device')
+            launch.add_argument('--description',default='',help='what this job does')
+            launch.add_argument('--agent',help='agent identity from communication init')
         if action == 'serve':
             launch.add_argument('--name', required=True)
             launch.add_argument('--port', type=int, required=True)
@@ -225,6 +275,8 @@ def parser():
         command.add_argument('id')
         if action == 'logs':
             command.add_argument('--lines', type=int, default=100)
+            command.add_argument('--service',action='store_true',help='read a systemd service instead of a job')
+            command.add_argument('--follow',action='store_true',help='terminal polling; Ctrl+C leaves job running')
         elif action == 'wait':
             command.add_argument('--timeout', type=int, default=600)
         elif action == 'stop':
@@ -279,19 +331,49 @@ def execute(args):
             raise DeviceError('Host needs Python 3.10+; conda Python is fine.')
         if not shutil.which('ssh'):
             raise DeviceError('Host needs OpenSSH client. Prepare SSH keys/known_hosts yourself.')
+        workspace.initialize(WORKSPACE)
+        if CONFIG.exists() and LEGACY_CONFIG.exists() and CONFIG == WORKSPACE/'config/devices.json':
+            if read_json(CONFIG) != read_json(LEGACY_CONFIG):
+                raise DeviceError('Both config files exist with different data. Resolve them manually; no profile was replaced.', 'config_conflict')
+            from device_common import safe_path
+            legacy = safe_path(WORKSPACE/'legacy'); legacy.mkdir(exist_ok=True, mode=0o700)
+            archived = safe_path(legacy/'devices-'+uuid.uuid4().hex+'.json')
+            safe_path(LEGACY_CONFIG).rename(archived)
         if not CONFIG.exists():
-            atomic_json(CONFIG, {'schema': SCHEMA, 'profile': uuid.uuid4().hex, 'devices': {}})
+            if CONFIG == WORKSPACE/'config/devices.json' and LEGACY_CONFIG.exists():
+                config()  # Validate before moving; preserve the exact profile/data.
+                from device_common import safe_path
+                safe_path(LEGACY_CONFIG).rename(safe_path(CONFIG))
+            else:
+                atomic_json(CONFIG, {'schema': SCHEMA, 'profile': uuid.uuid4().hex, 'devices': {}})
         config()
         return 'setup', {'ready': True, 'python': sys.version.split()[0], 'config': str(CONFIG), 'next': 'device add'}
     if args.action == 'doctor':
         return 'doctor', {'python': sys.version.split()[0], 'ssh': shutil.which('ssh'), 'config_exists': CONFIG.exists(), 'native_host': sys.platform, 'wsl_required': False}
     if args.action == 'demo':
+        if args.view=='dashboard':
+            return 'dashboard', {'observed_at':'DEMO / FAKE DATA / NO SSH','include_history':False,'devices':[{'name':'demo-device','online':True,'active_jobs':1,'memory_available_gib':24,'memory_total_gib':32,'gpus':[{'total_mib':24576,'free_mib':6144}]}],'jobs':[{'device':'demo-device','id':'job-'+'a'*16,'name':'llm-example','state':'running','phase':'serving','description':'Example LLM service (fake data)'}]}
         return 'status', {'devices': [{'name': 'sekiro', 'online': True, 'ready': True, 'memory_available_gib': 27.4, 'gpus': [{'name': 'RTX 4090 · 22 GiB free'}]}, {'name': 'genichiro', 'online': True, 'ready': True, 'memory_available_gib': 12.1, 'gpus': [{'name': 'RTX 2080 Ti · 10 GiB free'}]}, {'name': 'lab-01', 'online': False, 'ready': False}]}
     if args.action == 'add':
         return 'add', add_device(args)
+    if args.action=='communication':
+        if args.operation=='init':
+            if not args.agent: raise DeviceError('Provide an agent ID, e.g. codex-20261006-a1.')
+            return 'communication_init',workspace.agent(WORKSPACE,args.agent)
+        if args.operation=='show': return 'communication',workspace.show(WORKSPACE,args.agent)
+        if args.operation=='note':
+            if not args.agent or not args.title or bool(args.message)==bool(args.message_file):
+                raise DeviceError('Provide AGENT --title and exactly one of --message / --message-file.')
+            message=Path(args.message_file).read_text(encoding='utf-8') if args.message_file else args.message
+            return 'communication_note',workspace.note(WORKSPACE,args.agent,args.title,message,args.device,args.job)
+        result=overview(config(),include_all=True)
+        return 'communication_snapshot',workspace.snapshot(WORKSPACE,result)
     conf = config()
     if args.action == 'status':
         return 'status', status(conf)
+    if args.action in ('jobs','dashboard'):
+        if args.action=='dashboard' and args.interval<1: raise DeviceError('Dashboard interval must be >=1 second.')
+        return args.action,overview(conf,args.device,args.all)
     entry = selected(conf, args.device)
     if args.action == 'remove':
         confirm(args, 'Forget this device locally? Remote jobs/services/data will remain.')
@@ -318,11 +400,33 @@ def execute(args):
         kwargs = {'project': name(args.project), 'env': args.env, 'command': args.command, 'gpu': args.gpu}
         if args.action == 'serve':
             kwargs.update(name=name(args.name), port=args.port)
-        return args.action, call(args.action, **kwargs)
-    if args.action in ('jobs', 'services'):
+        else:
+            kwargs.update(name=args.name,description=args.description,agent=args.agent)
+            if args.agent and (not args.name or not args.description.strip()):
+                raise DeviceError('Agent submissions require --name and --description so humans can understand the job.')
+            if args.agent: workspace.agent(WORKSPACE,args.agent)
+        result=call(args.action, **kwargs)
+        if args.action=='run':
+            try:
+                workspace.receipt(WORKSPACE,args.device,result)
+            except (OSError,DeviceError) as exc:
+                result['warning']='Job submitted; local receipt could not be saved: '+str(exc)+'. Inspect its ID before retrying.'
+        return args.action,result
+    if args.action=='job': return 'job',call('job_detail',id=args.id)
+    if args.action=='job-note':
+        if args.agent: workspace.agent(WORKSPACE,args.agent)
+        result=call('job_note',id=args.id,**{k:getattr(args,k) for k in ('name','description','summary','phase','progress','agent')})
+        if args.agent:
+            try:
+                workspace.note(WORKSPACE,args.agent,'Job update: '+result['name'],result.get('summary') or result.get('description') or result.get('phase') or 'Job metadata updated.',args.device,result['id'])
+            except (OSError,DeviceError) as exc:
+                result['warning']='Device metadata updated; local handoff note could not be saved: '+str(exc)
+        return 'job',result
+    if args.action == 'services':
         return args.action, call(args.action)
     if args.action == 'logs':
-        return 'logs', call('logs', id=args.id, lines=args.lines)
+        if args.follow and args.json: raise DeviceError('--follow is for terminals; use JSON snapshots for agents.')
+        return 'logs', call('logs', id=args.id, lines=args.lines,service=args.service)
     if args.action == 'stop':
         return 'stop', call('stop', id=args.id, force=args.force)
     if args.action == 'fetch':
@@ -366,20 +470,25 @@ def menu():
     ui = UI()
     while True:
         ui.header('DIRECT SSH · CONTROL DESK')
-        print('  1  Devices / status\n  2  Register device\n  3  Inspect a device\n  4  Jobs\n  5  Services\n  6  Conda environments\n  h  Command help\n  q  Exit\n')
+        print('  1  Devices / status\n  2  Register device\n  3  Inspect a device\n  4  Jobs across devices\n  5  Services\n  6  Conda environments\n  7  Live dashboard\n  8  Shared handoff\n  h  Command help\n  q  Exit\n')
         choice = input('Choose: ').strip().lower()
         if choice in ('q', ''):
             return
         if choice == 'h':
             parser().print_help()
             continue
-        commands = {'1': ['status'], '2': ['add'], '3': ['inspect'], '4': ['jobs'], '5': ['services'], '6': ['env', 'list']}
+        commands = {'1': ['status'], '2': ['add'], '3': ['inspect'], '4': ['jobs'], '5': ['services'], '6': ['env', 'list'], '7':['dashboard'],'8':['communication','show']}
         if choice not in commands:
             continue
         argv = commands[choice][:]
-        if choice in ('3', '4', '5', '6'):
+        if choice in ('3', '5', '6'):
             argv.append(input('Device name: ').strip())
         try:
+            if choice=='7':
+                from device_dashboard import watch
+                board_args=arguments(argv)
+                watch(board_args,lambda:execute(board_args)[1],execute,arguments)
+                continue
             action, data = execute(arguments(argv))
             ui.render(action, data)
         except DeviceError as exc:
@@ -399,7 +508,10 @@ def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
         if sys.stdin.isatty():
-            menu()
+            try:
+                menu()
+            except (KeyboardInterrupt,EOFError):
+                return 130
         else:
             parser().print_help()
         return 0
@@ -408,6 +520,14 @@ def main(argv=None):
         args = arguments(argv)
         if not args.action:
             parser().print_help()
+            return 0
+        if args.action=='dashboard' and not args.json and not args.once and sys.stdin.isatty() and sys.stdout.isatty():
+            from device_dashboard import watch
+            watch(args,lambda:execute(args)[1],execute,arguments)
+            return 0
+        if args.action=='logs' and args.follow:
+            from device_dashboard import follow_logs
+            follow_logs(args,execute)
             return 0
         action, data = execute(args)
         if args.json:

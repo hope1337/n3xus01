@@ -2,6 +2,8 @@
 /inventory/hosts.yml
 /devices.yml
 /devices.json
+/workspace/*
+!/workspace/README.md
 /downloads/
 /.cluster/
 /.venv/

@@ -1,34 +1,57 @@
-# Giao việc cho agent
+# Agent: sử dụng CLI, không chỉnh sửa công cụ
 
-Agent cần chạy lệnh trên host tại repo. Không cần MCP. Windows dùng `.\device.ps1`, Ubuntu `./device`. `--json` đặt trước/sau lệnh, trước dấu `--`; stdout là một JSON với schema, ok, data hoặc error. Exit 0 là thành công của thao tác, chưa chắc job đã hoàn tất. Exit 1 là lỗi, 130 là host bị ngắt. Help vẫn là văn bản.
+Đọc AGENTS.md trước. User giao task không tự cấp quyền sửa repo. Mặc định chỉ sử dụng; code task ở workspace/communication/agents/ID/work, kết quả vào downloads, ghi chú qua communication. Windows dùng .\device.ps1, Ubuntu ./device. Thêm --json trước dấu --; phản hồi schema/ok/action/data hoặc error. Exit 0 nghĩa thao tác thành công, không nhất thiết job hoàn tất. Help vẫn là văn bản. Không mở dashboard/watch interactive trong agent.
 
-Prompt gợi ý:
-
-> Đọc AGENTS.md và docs/agent-usage.md. Xem device nào online và tài nguyên hiện tại. Tôi muốn chạy code trong thư mục X trên genichiro. Inspect Conda trước và dùng env phù hợp. Nếu thiếu package/env thì giải thích và hỏi tôi trước khi cài. Gửi code, chạy nền, xem log và lấy kết quả.
-
-> Tôi muốn host một LLM trên sekiro. Kiểm tra GPU/RAM/disk và công cụ đã có trước. Đề xuất model phù hợp, hỏi trước khi tải model lớn/cài package. Dùng service Tailscale, kiểm tra endpoint thật rồi trả URL và cách gọi. Không mở public port.
-
-Quy trình tác vụ:
+## Bắt đầu phiên
 
 ```powershell
+.\device.ps1 communication init codex-20261006-a1 --json
+.\device.ps1 communication show --json
 .\device.ps1 status --json
-.\device.ps1 inspect genichiro --json
-.\device.ps1 env list genichiro --json
-.\device.ps1 env inspect genichiro TEN_ENV --json
-.\device.ps1 sync genichiro DUONG_DAN_CODE --project extract --json
-.\device.ps1 run genichiro extract --env TEN_ENV --gpu 0 --json -- python -u main.py
+.\device.ps1 dashboard --once --json
+.\device.ps1 inspect sekiro --json
+.\device.ps1 env list sekiro --json
+.\device.ps1 env inspect sekiro TEN_ENV --json
 ```
 
-Lưu ID do run trả; dùng jobs/logs/wait. Khi completed, fetch tải thư mục DEVICE_OUTPUT_DIR; code cần ghi kết quả vào biến đó. Hoặc fetch --path THU_MUC_TUONG_DOI tải một thư mục trong workspace. Download từ chối ghi đè, giới hạn 64 MiB. Dataset/checkpoint lớn giữ trên disk device.
+ID riêng mỗi phiên, không dùng folder của agent trước để ghi mới. Snapshot/handoff cũ phải được đối chiếu live. Chỉ các device đã đăng ký được hiển thị; CLI không quét toàn tailnet tự nhận máy lạ. Không đọc key/password/legacy kubeconfig để lấy status.
+
+## Gửi việc dễ hiểu
+
+Viết code vào work/TASK; inspect secret và dependency. Không sửa examples hay scripts để viết workload. Tên job nên nói mục đích, mô tả một câu. Nếu --agent có mặt thì CLI yêu cầu --name và --description.
 
 ```powershell
-.\device.ps1 env plan genichiro TEN_ENV --package pypdf --pip --json
+.\device.ps1 sync sekiro workspace/communication/agents/codex-20261006-a1/work/pdf-extract --project pdf-extract --json
+.\device.ps1 run sekiro pdf-extract --name extract-pdfs --description 'Đọc PDF và xuất text' --agent codex-20261006-a1 --env TEN_ENV --json -- python -u main.py
+.\device.ps1 job sekiro extract-pdfs --json
+.\device.ps1 logs sekiro extract-pdfs --json
 ```
 
-Trình bày plan cho người dùng. Chỉ sau khi được đồng ý mới dùng env install cùng flags và --yes. Nếu tạo mới: env create DEVICE TEN_MOI --python 3.11 --yes. Không chạm base hoặc env riêng khi chưa có yêu cầu; ngoài managed jobs, user có thể đang chạy notebook/training riêng.
+Lưu ID trả về. Trên một device, tên không trùng với job active; lịch sử có thể trùng tên nên dùng ID nếu ambiguous. jobs mặc định active; jobs --all xem lịch sử mọi máy. Mỗi job có workspace riêng của revision đã sync; agent chạy sau không sửa code của job trước.
 
-Host service bằng serve, với {bind}/{port} trong argv, xem ví dụ README. Dịch vụ không tự có authentication; tailnet ACL vẫn do user quản lý. services → logs DEVICE TEN_SERVICE → service DEVICE check TEN_SERVICE. Nếu model load lâu, chờ và check lại; không coi một process active là endpoint hoạt động.
+```powershell
+.\device.ps1 job-note sekiro JOB_ID --summary 'Đã xử lý 40/100 file theo log' --phase extracting --progress 40 --agent codex-20261006-a1 --json
+```
 
-Agent được viết code trong thư mục source riêng, sync và chạy literal argv. Không tự upload toàn home hoặc repo chứa secrets; exclusions chỉ hỗ trợ, không bảo đảm phát hiện mọi secret. CLI không biết độ phù hợp của package/model, agent phải xem cấu hình và chọn. Không tự download model lớn hay đổi driver. Ollama/llama.cpp là công cụ khác nhau: xác minh executable thực tế trước.
+Summary/phase/progress là thông tin do agent chịu trách nhiệm, có note_author/note_updated_at; không đoán phần trăm từ thời gian. State/observed_at là đọc live. Tiến trình running có thể đang chờ; API phải request thật để kết luận ready. Job cũ thiếu name/description có thể được đặt lại qua job-note; không restart để đổi mô tả.
 
-Mất host kết nối: job/service đã gửi vẫn chạy, agent không tiếp tục suy nghĩ khi host tắt. Bật host lại → status/jobs/services/logs. Không tự retry một mutation vừa timeout: inspect trước để tránh gửi trùng. Device reboot: jobs có thể interrupted, services tự khởi động lại. Hỏi trước khi chạy lại việc tốn tài nguyên hoặc ghi dữ liệu.
+Wait/logs/fetch/stop/clean chấp nhận ID hoặc tên không ambiguous. --follow là terminal-only; agent lấy log snapshots. Wait timeout giữ job. Fetch default DEVICE_OUTPUT_DIR; --path là thư mục tương đối trong workspace job. Fetch không overwrite, max64MiB. Không tự clean lịch sử/results; user intent + confirmation, fetch trước.
+
+## Dependencies và privileges
+
+Inspect Conda trước. `env plan DEVICE ENV --package pypdf --pip --json` không cài vào env nhưng solver có thể cập nhật cache. Hỏi user trước install/create/remove; chỉ thêm --yes sau khi được đồng ý. Không đổi base/driver, accept channel terms hay nâng pip tự động. Kiểm tra env dùng bởi external notebook với user; CLI chỉ biết managed jobs/services.
+
+Chạy --gpu INDEX chỉ chọn CUDA device, không reservation. Kiểm tra sử dụng GPU trước và không dừng training riêng. Không mở public listener. prepare --install-tools/--enable-linger có thể cần sudo password nhập ở terminal; chat approval không tự cung cấp password. Báo blocker, không skip và báo task done.
+
+## Handoff
+
+```powershell
+.\device.ps1 communication note codex-20261006-a1 --title 'PDF extraction handoff' --message-file workspace/communication/agents/codex-20261006-a1/work/handoff.txt --device sekiro --job JOB_ID --json
+.\device.ps1 communication snapshot --json
+```
+
+Nội dung note: mục tiêu, device/project/job ID, tiến trình đã kiểm tra lúc nào, kết quả ở đâu, lệnh/log chứng minh, approval đã có, phần chưa xong và cách tiếp tục. Notes có file riêng nên agent khác không ghi đè. Snapshot có timestamp và cả offline/errors; không lấy snapshot làm bằng chứng live. shared/SUMMARY.md dành cho ngữ cảnh bền vững, không xóa phần người khác. Never secrets. Runtime toàn bộ ở workspace, không force-add vào Git.
+
+Service systemd tùy chọn: serve cần linger và {bind}/{port}; logs DEVICE NAME --service; service check từ host phải thành công. Không bypass guards bằng cách sửa source/helper. Direct SSH read-only diagnostics được phép nếu cần; mutation ngoài CLI cần user intent và ghi lại. Không tạo hệ quản lý job song song bằng tmux thủ công rồi gọi là managed job.
+
+Host offline: job vẫn chạy theo login policy, agent không tiếp tục suy nghĩ. Device reboot: tmux job interrupted, systemd có thể restart. Không auto-retry mutation timeout; inspect job/service trước để tránh duplicate.

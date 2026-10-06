@@ -12,8 +12,8 @@ for ($i = 0; $i -lt $deviceArguments.Count; $i++) {
 if ($actionPosition -ge 0 -and $deviceArguments.Count -gt ($actionPosition + 3) -and $deviceArguments[$actionPosition] -in @('run', 'serve') -and $deviceArguments -notcontains '--') {
     $position = $actionPosition + 3
     while ($position -lt $deviceArguments.Count) {
-        if ($deviceArguments[$position] -in @('--env', '--gpu', '--name', '--port', '--color')) { $position += 2; continue }
-        if ($deviceArguments[$position] -eq '--json' -or $deviceArguments[$position] -match '^--(env|gpu|name|port|color)=') { $position++; continue }
+        if ($deviceArguments[$position] -in @('--env', '--gpu', '--name', '--port', '--color', '--description', '--agent')) { $position += 2; continue }
+        if ($deviceArguments[$position] -eq '--json' -or $deviceArguments[$position] -match '^--(env|gpu|name|port|color|description|agent)=') { $position++; continue }
         if ($deviceArguments[$position].StartsWith('--')) { break }
         $deviceArguments = @($deviceArguments[0..($position-1)]) + @('--') + @($deviceArguments[$position..($deviceArguments.Count-1)])
         break

@@ -13,7 +13,7 @@ for directory in ('scripts','tests','examples'):
         if b'\r\n' in path.read_bytes(): errors.append(f'{path.name}: expected LF')
 for path in [ROOT/'device',ROOT/'device.ps1']:
     if b'\r\n' in path.read_bytes(): errors.append(f'{path.name}: expected LF')
-for required in ('device','device.ps1','scripts/device_cli.py','scripts/device_remote.py','README.md','AGENTS.md','docs/agent-usage.md','docs/validation.md'):
+for required in ('device','device.ps1','scripts/device_cli.py','scripts/device_remote.py','scripts/device_dashboard.py','scripts/device_workspace.py','workspace/README.md','README.md','AGENTS.md','docs/agent-usage.md','docs/validation.md'):
     if not (ROOT/required).is_file(): errors.append('Missing '+required)
 for path in [ROOT/'README.md',*(ROOT/'docs').glob('*.md')]:
     for target in re.findall(r'\]\(([^)]+)\)',path.read_text(encoding='utf-8')):
@@ -29,6 +29,7 @@ for path in (ROOT/'scripts').glob('*.py'):
                 if option.arg=='shell' and isinstance(option.value,ast.Constant) and option.value.value: errors.append('shell=True: '+path.name)
 json.loads((ROOT/'devices.example.json').read_text(encoding='utf-8'))
 if '/devices.json' not in (ROOT/'.gitignore').read_text(): errors.append('Config must be ignored')
+if '/workspace/*' not in (ROOT/'.gitignore').read_text(): errors.append('Workspace runtime must be ignored')
 if errors:
     print('\n'.join(errors)); sys.exit(1)
 print('PASS: Python syntax, launchers LF, document links, obsolete-source removal, config ignore, unsafe API checks')

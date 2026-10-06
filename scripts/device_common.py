@@ -15,7 +15,7 @@ import uuid
 SCHEMA = 1
 OWNER = 'personal-device-cli'
 MAX_ARCHIVE = 64 * 1024 * 1024
-EXCLUDE = {'.git', '.cluster', '.cache', '.venv', 'venv', 'node_modules', '__pycache__', '.ssh', '.aws', '.codex', '.agents', 'datasets', 'checkpoints'}
+EXCLUDE = {'.git', '.cluster', '.cache', 'workspace', 'communication', '.venv', 'venv', 'node_modules', '__pycache__', '.ssh', '.aws', '.codex', '.agents', 'datasets', 'checkpoints'}
 SECRET_PATTERNS = ('.env', '.env.*', '*.pem', '*.key', 'id_rsa*', 'id_ed25519*', 'devices.json', 'devices.yml', 'kubeconfig*')
 
 class DeviceError(Exception):
@@ -101,6 +101,8 @@ def atomic_json(path, value):
 
 def pack_directory(source, *, exclusions=True):
     source = safe_path(source)
+    if exclusions and source.name in EXCLUDE:
+        raise DeviceError('Choose a dedicated code folder, not the workspace/communication/cache root.', 'unsafe_path')
     if not source.is_dir():
         raise DeviceError('Source must be a directory.', 'invalid_path')
     stream = io.BytesIO()
