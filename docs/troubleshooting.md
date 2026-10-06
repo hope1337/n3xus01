@@ -1,6 +1,6 @@
 # Khi có lỗi
 
-`device doctor` kiểm tra host; `device status`, `inspect DEVICE` kiểm tra SSH và device. Lỗi nói rõ mã/bước; agent dùng --json.
+`n3xus doctor` kiểm tra host; `n3xus status`, `inspect DEVICE` kiểm tra SSH và device. Lỗi nói rõ mã/bước; agent dùng --json.
 
 - SSH failed/offline: thử `ssh USER@TAILSCALE_IP`, xem Tailscale/key/known_hosts ở OS host hiện tại. Không tự xóa known_hosts để bypass cảnh báo.
 - Python thiếu: host và device cần 3.10+. Ubuntu 22.04+ có python3; repo không tự upgrade Python hệ thống.

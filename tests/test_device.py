@@ -239,13 +239,13 @@ class UITests(unittest.TestCase):
 @unittest.skipUnless(os.name == 'nt', 'native Windows launcher')
 class WindowsLauncherTests(Temporary):
     def test_native_powershell_preserves_argv(self):
-        shutil.copy2(ROOT / 'device.ps1', self.path / 'device.ps1')
+        shutil.copy2(ROOT / 'n3xus.ps1', self.path / 'n3xus.ps1')
         (self.path / 'scripts').mkdir()
         (self.path / 'scripts/device_cli.py').write_text("import os,base64,json; print(json.dumps(json.loads(base64.b64decode(os.environ['DEVICE_ARGUMENTS_BASE64']).decode('utf-8'))))",encoding='utf-8')
         candidates = [shutil.which('powershell.exe'), shutil.which('pwsh.exe')]
         for executable in filter(None, candidates):
             with self.subTest(executable=executable):
-                script = "& '" + str(self.path / 'device.ps1').replace("'","''") + "' --json run sekiro hello --env ml --name test --description 'test $HOME; ü' --agent tester -- python -c 'print(\"$HOME; ü\")' 'a b'"
+                script = "& '" + str(self.path / 'n3xus.ps1').replace("'","''") + "' --json run sekiro hello --env ml --name test --description 'test $HOME; ü' --agent tester -- python -c 'print(\"$HOME; ü\")' 'a b'"
                 result = subprocess.run([executable,'-NoProfile','-Command',script],capture_output=True, text=True, encoding='utf-8',errors='replace',timeout=30)
                 self.assertEqual(result.returncode,0,result.stderr)
                 payload = json.loads(result.stdout)

@@ -20,7 +20,7 @@ Never store passwords, private keys, tokens, Tailscale auth keys or env secrets 
 
 ## Workflow
 
-Read docs/agent-usage.md and CLI help. Windows uses `./device.ps1`; Ubuntu uses `./device`. Agent commands use `--json`, never interactive dashboard/prompts. Host/device SSH keys, known_hosts and Tailscale are prepared by user. No coordinator, K3s, Ansible, WSL dependency, image workflow or MCP. Use CLI for managed work; read-only direct SSH diagnostics are allowed when needed. Other direct-SSH mutations require user intent, must be documented, and must not create unmanaged jobs to bypass CLI restrictions.
+Read docs/agent-usage.md and CLI help. Windows uses `./n3xus.ps1`; Ubuntu uses `./n3xus`. Agent commands use `--json`, never interactive dashboard/prompts. Host/device SSH keys, known_hosts and Tailscale are prepared by user. No coordinator, K3s, Ansible, WSL dependency, image workflow or MCP. Use CLI for managed work; read-only direct SSH diagnostics are allowed when needed. Other direct-SSH mutations require user intent, must be documented, and must not create unmanaged jobs to bypass CLI restrictions.
 
 1. Read handoff; inspect live device resources and envs. Online does not mean free GPU.
 2. Write workload code under your own work folder. Inspect it for secrets. Sync ONLY that dedicated source folder, not the entire workspace/repo/home. Transfers exclude common secret/cache/dataset names but are not a secret detector; max 64MiB/20k regular files, no symlinks.
@@ -44,11 +44,11 @@ Systemd service features are optional beyond the core tmux workflow. Require lin
 
 ## Maintainer map and verification (only with explicit user request)
 
-- device / device.ps1: stdlib Python launchers; native Windows JSON/base64 argv, no key copies/global policy/WSL.
+- n3xus / n3xus.ps1: stdlib Python launchers; native Windows JSON/base64 argv, no key copies/global policy/WSL.
 - scripts/device_install.py: owned user launchers, HKCU PATH on Windows, marked Bash startup PATH on Ubuntu; no packages/admin. setup registers by default; unregister keeps device config/remote work.
 - scripts/device_cli.py: validated config, native SSH JSON RPC, command routing, multi-device snapshots.
 - scripts/device_common.py: safe paths/private atomic JSON/bounded archives; scripts/device_remote.py: owner-checked Linux helper/tmux runners/optional systemd.
 - scripts/device_workspace.py: host runtime, agent folders, unique handoff notes; scripts/device_dashboard.py: native terminal keys/polling; scripts/device_ui.py: colors/tables/sanitized output.
 - workspace/: all runtime data; docs/: usage/architecture/safety/acceptance; tests/: offline safety/transport and Linux integration. Existing legacy opaque state is archived without reading credentials.
 
-After code edits: python tests/static_check.py; python -m unittest discover -s tests -p 'test_*.py'; bash -n device; Windows pwsh -NoProfile -File tests/test_windows_launcher.ps1. Tests do not SSH/change real devices. Record exact results/limitations in docs/validation.md. Linux tests skipped on Windows must not be called proven Linux operation. Explicitly authorized live acceptance is in docs/acceptance.md. Preserve active remote jobs during maintenance; no helper refresh, reboot, package mutation or job cleanup merely to test changes.
+After code edits: python tests/static_check.py; python -m unittest discover -s tests -p 'test_*.py'; bash -n n3xus; Windows pwsh -NoProfile -File tests/test_windows_launcher.ps1. Tests do not SSH/change real devices. Record exact results/limitations in docs/validation.md. Linux tests skipped on Windows must not be called proven Linux operation. Explicitly authorized live acceptance is in docs/acceptance.md. Preserve active remote jobs during maintenance; no helper refresh, reboot, package mutation or job cleanup merely to test changes.

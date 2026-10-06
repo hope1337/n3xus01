@@ -59,26 +59,26 @@ def path_key(value):
     return ntpath.normcase(ntpath.normpath(os.path.expandvars(value.strip().strip('"'))))
 
 
-def templates(platform, metadata):
+def templates(platform, metadata, command='n3xus'):
     encoded = base64.b64encode(json.dumps(metadata,ensure_ascii=False,sort_keys=True).encode('utf-8')).decode('ascii')
     repo = clean_text(metadata['repo'])
     python = clean_text(metadata['python'])
     if platform == 'linux':
         text = '#!/bin/sh\n# '+MARKER+encoded+'\nexec '+shlex.quote(python)+' '+shlex.quote(str(Path(repo)/'scripts/device_cli.py'))+' "$@"\n'
-        return {'device':text.encode('utf-8')}
+        return {command:text.encode('utf-8')}
     quote = lambda value: "'"+value.replace("'","''")+"'"
     script = '# '+MARKER+encoded+'\n$ErrorActionPreference = \'Stop\'\n'
     script += '$previous = $env:DEVICE_PYTHON_EXECUTABLE\ntry {\n'
     script += '    $env:DEVICE_PYTHON_EXECUTABLE = '+quote(python)+'\n'
-    script += '    & '+quote(str(Path(repo)/'device.ps1'))+' @args\n    $deviceExit = $LASTEXITCODE\n'
+    script += '    & '+quote(str(Path(repo)/(command+'.ps1')))+' @args\n    $deviceExit = $LASTEXITCODE\n'
     script += '} finally { $env:DEVICE_PYTHON_EXECUTABLE = $previous }\nexit $deviceExit\n'
     # PowerShell 5.1 needs a BOM when paths contain non-ASCII characters.
-    cmd = '@echo off\r\nREM '+MARKER+encoded+'\r\nsetlocal DisableDelayedExpansion\r\npowershell.exe -NoProfile -File "%~dp0device.ps1" %*\r\nexit /b %errorlevel%\r\n'
-    return {'device.ps1':script.encode('utf-8-sig'),'device.cmd':cmd.encode('ascii')}
+    cmd = '@echo off\r\nREM '+MARKER+encoded+'\r\nsetlocal DisableDelayedExpansion\r\npowershell.exe -NoProfile -File "%~dp0'+command+'.ps1" %*\r\nexit /b %errorlevel%\r\n'
+    return {command+'.ps1':script.encode('utf-8-sig'),command+'.cmd':cmd.encode('ascii')}
 
 
-def existing(platform, target):
-    files = ('device.ps1','device.cmd') if platform == 'windows' else ('device',)
+def existing(platform, target, command='n3xus'):
+    files = (command+'.ps1',command+'.cmd') if platform == 'windows' else (command,)
     metadata = None
     for filename in files:
         path = safe_path(target/filename)
@@ -89,8 +89,8 @@ def existing(platform, target):
         raw = path.read_bytes()
         try:
             lines = raw.decode('utf-8-sig').splitlines()
-            line = lines[1] if filename in ('device','device.cmd') else lines[0]
-            prefix = 'REM ' if filename == 'device.cmd' else '# '
+            line = lines[1] if platform == 'linux' or filename.endswith('.cmd') else lines[0]
+            prefix = 'REM ' if filename.endswith('.cmd') else '# '
             if not line.startswith(prefix+MARKER):
                 raise ValueError('not owned')
             candidate = json.loads(base64.b64decode(line[len(prefix+MARKER):],validate=True).decode('utf-8'))
@@ -98,12 +98,31 @@ def existing(platform, target):
                 raise ValueError('metadata changed')
             if not all(isinstance(candidate[k],str) and Path(candidate[k]).is_absolute() for k in ('repo','python')):
                 raise ValueError('invalid paths')
-            if templates(platform,candidate)[filename] != raw or metadata is not None and candidate != metadata:
+            if templates(platform,candidate,command)[filename] != raw or metadata is not None and candidate != metadata:
                 raise ValueError('manual modifications')
         except (ValueError,TypeError,KeyError,IndexError,UnicodeError) as exc:
             raise DeviceError('Refusing to overwrite/remove an unowned or modified launcher: '+str(path),'launcher_conflict') from exc
         metadata = candidate
     return metadata
+
+
+def legacy_registration(platform,target,repo):
+    """Migrate only exact owned device launchers from this checkout."""
+    files = ('device.ps1','device.cmd') if platform == 'windows' else ('device',)
+    for filename in files:
+        path=target/filename
+        if path.is_symlink() or getattr(path,'is_junction',lambda:False)():
+            return None
+        path=safe_path(path)
+        if path.exists():
+            if not path.is_file(): return None
+            text=path.read_bytes().decode('utf-8-sig',errors='replace').splitlines()
+            position=1 if platform=='linux' or filename.endswith('.cmd') else 0
+            prefix='REM ' if filename.endswith('.cmd') else '# '
+            if len(text)<=position or not text[position].startswith(prefix+MARKER):
+                return None  # Unrelated commands are never adopted/deleted.
+    legacy=existing(platform,target,'device')
+    return legacy if legacy and safe_path(legacy['repo'])==safe_path(repo) else None
 
 
 def profile_block(target):
@@ -140,10 +159,11 @@ def register(repo, workspace):
     platform = platform_name()
     target = directory(platform)
     old = existing(platform,target)
+    legacy = legacy_registration(platform,target,repo)
     current = windows_path() if platform == 'windows' else os.environ.get('PATH','')
     normalize = path_key if platform == 'windows' else lambda p: os.path.normpath(os.path.expandvars(p))
     missing = normalize(str(target)) not in [normalize(p) for p in current.split(';' if platform == 'windows' else ':') if p]
-    metadata = {'repo':str(safe_path(repo)), 'python':str(safe_path(Path(sys.executable).resolve())), 'path_added':missing or bool(old and old['path_added'])}
+    metadata = {'repo':str(safe_path(repo)), 'python':str(safe_path(Path(sys.executable).resolve())), 'path_added':missing or bool(old and old['path_added']) or bool(legacy and legacy['path_added'])}
     changes = profiles(target) if platform == 'linux' else []
     # Complete conflict/symlink checks before writing any launchers or startup files.
     for filename,content in templates(platform,metadata).items():
@@ -157,8 +177,11 @@ def register(repo, workspace):
             if block not in content:
                 mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
                 write_file(path,content+(b'\n' if content and not content.endswith(b'\n') else b'')+block,mode)
-    receipt = {'registered':True,'platform':platform,'bin':str(target),'repo':metadata['repo'],'python':metadata['python'],
-               'note':'Use device from any folder. New terminals load user PATH; existing Ubuntu terminals: source ~/.bashrc.'}
+    if legacy:
+        for filename in templates(platform,legacy,'device'):
+            safe_path(target/filename).unlink(missing_ok=True)
+    receipt = {'registered':True,'command':'n3xus','migrated_device_command':bool(legacy),'platform':platform,'bin':str(target),'repo':metadata['repo'],'python':metadata['python'],
+               'note':'Use n3xus from any folder. New terminals load user PATH; existing Ubuntu terminals: source ~/.bashrc.'}
     atomic_json(workspace/'config'/('cli-registration-'+platform+'.json'),receipt)
     return receipt
 

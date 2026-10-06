@@ -1,6 +1,6 @@
-# Personal Device — giao việc cho các máy của bạn
+# n3xus — giao việc cho các máy của bạn
 
-Repo này giúp bạn và AI agent **gửi code từ laptop sang máy Ubuntu, chạy nền và biết công việc đang làm gì**. Laptop là **host**; các máy nhận việc là **device**. Bạn chuẩn bị Tailscale và SSH key trước; CLI sử dụng kết nối đó.
+Repo này giúp bạn và AI agent **gửi code từ laptop sang máy Ubuntu, chạy nền và biết công việc đang làm gì**. Laptop là **host**; các máy nhận việc là **n3xus**. Bạn chuẩn bị Tailscale và SSH key trước; CLI sử dụng kết nối đó.
 
 Ví dụ: “Chạy script xử lý PDF trên genichiro” hoặc “Host model trên sekiro”. Agent kiểm tra tài nguyên/Conda, gửi code, tạo job, đọc log rồi lấy kết quả hoặc kiểm tra endpoint. Không cần đóng image, học Kubernetes hay giữ một terminal SSH mở liên tục.
 
@@ -8,7 +8,7 @@ Ví dụ: “Chạy script xử lý PDF trên genichiro” hoặc “Host model 
 
 | Thành phần | Công dụng |
 |---|---|
-| **CLI `device`** | Gửi code, chạy/dừng/xóa job, xem máy, env, log và lấy kết quả |
+| **CLI `n3xus`** | Gửi code, chạy/dừng/xóa job, xem máy, env, log và lấy kết quả |
 | **Dashboard terminal** | Bảng tự cập nhật mọi device và job, giống cách xem nvitop; không cần website |
 | **`AGENTS.md`** | Quy tắc agent: được làm gì, hỏi khi nào, lưu dữ liệu ở đâu |
 | **`docs/agent-usage.md`** | Các lệnh và quy trình giao việc cho agent |
@@ -39,25 +39,25 @@ Không có đầu sỏ, Kubernetes, Ansible, WSL bắt buộc, scheduler hay g�
 Windows PowerShell tại repo:
 
 ```powershell
-.\device.ps1 setup
-device add sekiro --address 100.123.148.6 --user manh
-device prepare sekiro --install-tools --enable-linger
-device check sekiro
+.\n3xus.ps1 setup
+n3xus add sekiro --address 100.123.148.6 --user manh
+n3xus prepare sekiro --install-tools --enable-linger
+n3xus check sekiro
 ```
 
-Trên Ubuntu, lần đầu chạy `./device setup`, rồi mở terminal mới (hoặc `source ~/.bashrc` một lần). Sau đó cả Windows và Ubuntu đều gọi `device ...` từ bất kỳ thư mục nào. Chỉ thay **tên device, địa chỉ Tailscale và SSH user** cho máy của bạn. Thêm máy khác bằng `add` với tên/IP/user của máy đó. `prepare` hỏi xác nhận và có thể hỏi mật khẩu sudo **trong terminal** để cài tmux nếu thiếu/bật linger. CLI không cài Conda/driver, sửa firewall hay tạo SSH key.
+Trên Ubuntu, lần đầu chạy `./n3xus setup`, rồi mở terminal mới (hoặc `source ~/.bashrc` một lần). Sau đó cả Windows và Ubuntu đều gọi `n3xus ...` từ bất kỳ thư mục nào. Chỉ thay **tên device, địa chỉ Tailscale và SSH user** cho máy của bạn. Thêm máy khác bằng `add` với tên/IP/user của máy đó. `prepare` hỏi xác nhận và có thể hỏi mật khẩu sudo **trong terminal** để cài tmux nếu thiếu/bật linger. CLI không cài Conda/driver, sửa firewall hay tạo SSH key.
 
-`setup` tự đăng ký lệnh **device** cho user hiện tại. Windows đặt launcher trong `%LOCALAPPDATA%/PersonalDevice/bin` và thêm vào **user PATH**; chạy bằng `.\device.ps1 setup` cập nhật luôn PATH của terminal PowerShell hiện tại. Ubuntu đặt launcher trong `~/.local/bin`, thêm block PATH riêng vào `~/.profile` và `~/.bashrc` khi cần. Không cần admin/sudo hay pip package. Nếu terminal/app đã mở từ trước chưa nhận PATH, mở lại terminal/app. Các shell Ubuntu khác Bash có thể cần tự thêm `~/.local/bin` vào PATH.
+`setup` tự đăng ký lệnh **n3xus** cho user hiện tại. Windows đặt launcher trong `%LOCALAPPDATA%/PersonalDevice/bin` và thêm vào **user PATH**; chạy bằng `.\n3xus.ps1 setup` cập nhật luôn PATH của terminal PowerShell hiện tại. Ubuntu đặt launcher trong `~/.local/bin`, thêm block PATH riêng vào `~/.profile` và `~/.bashrc` khi cần. Không cần admin/sudo hay pip package. Nếu terminal/app đã mở từ trước chưa nhận PATH, mở lại terminal/app. Các shell Ubuntu khác Bash có thể cần tự thêm `~/.local/bin` vào PATH.
 
 Launcher trỏ về repo và Python đang dùng lúc setup. Di chuyển repo hoặc đổi Python: chạy lại setup ở vị trí mới; tại một thời điểm, lệnh toàn cục trỏ về một repo. `setup --no-register` chỉ chuẩn bị config. CLI giữ config/data trong workspace của repo; đường dẫn source/output tương đối được tính từ thư mục bạn đang đứng.
 
 Gỡ **lệnh toàn cục**, giữ config và toàn bộ job/data:
 
 ```powershell
-device unregister
+n3xus unregister
 ```
 
-Lệnh chỉ gỡ launcher do CLI tạo cùng phần PATH nó đã thêm. Không ghi đè/xóa launcher khác hoặc launcher/block PATH bị sửa thủ công. Sau gỡ vẫn có thể gọi `.\device.ps1` / `./device` tại repo. Đây khác với `remove DEVICE` (bỏ đăng ký một máy).
+Lệnh chỉ gỡ launcher do CLI tạo cùng phần PATH nó đã thêm. Không ghi đè/xóa launcher khác hoặc launcher/block PATH bị sửa thủ công. Sau gỡ vẫn có thể gọi `.\n3xus.ps1` / `./n3xus` tại repo. Đây khác với `remove DEVICE` (bỏ đăng ký một máy).
 
 Nếu Conda nằm ở đường dẫn khác: `add ... --conda /duong/dan/bin/conda`. Key mặc định được dùng; thêm `--key DUONG_DAN_KEY` nếu cần. Không lưu mật khẩu.
 
@@ -66,10 +66,10 @@ Config ở **`workspace/config/devices.json`**, Git bỏ qua. `setup` chuyển c
 ## Xem máy và công việc
 
 ```powershell
-device status
-device inspect sekiro
-device jobs
-device dashboard
+n3xus status
+n3xus inspect sekiro
+n3xus jobs
+n3xus dashboard
 ```
 
 `jobs` xem job đang hoạt động trên mọi device; `jobs sekiro` lọc một máy; `jobs --all` thêm lịch sử. Dashboard tự cập nhật qua SSH, hiển thị RAM/VRAM và job, không tự quản lý scheduler.
@@ -81,12 +81,12 @@ Trong dashboard: **j/k hoặc ↑/↓** chọn job, **i** chi tiết, **l** log,
 ## Gửi code và chạy thử
 
 ```powershell
-device sync sekiro examples/hello --project hello
-device run sekiro hello --name hello-test --description 'Thử chạy code và tạo kết quả' -- python3 -u main.py
-device job sekiro hello-test
-device logs sekiro hello-test
-device wait sekiro hello-test
-device fetch sekiro hello-test --output workspace/communication/agents/human/downloads/hello-test
+n3xus sync sekiro examples/hello --project hello
+n3xus run sekiro hello --name hello-test --description 'Thử chạy code và tạo kết quả' -- python3 -u main.py
+n3xus job sekiro hello-test
+n3xus logs sekiro hello-test
+n3xus wait sekiro hello-test
+n3xus fetch sekiro hello-test --output workspace/communication/agents/human/downloads/hello-test
 ```
 
 Mở hello.txt trong thư mục tải về để xem kết quả. Job có ID riêng; tên chỉ cần duy nhất trong các job đang hoạt động trên cùng device. Nếu lịch sử có nhiều job cùng tên, `jobs --all` in đầy đủ ID để bạn chọn đúng job. `logs --follow` theo dõi log trong terminal, Ctrl+C không dừng job. `wait` timeout cũng không dừng job.
@@ -96,9 +96,9 @@ Code tác vụ của bạn đặt trong `workspace/communication/agents/human/wo
 ## Conda và GPU
 
 ```powershell
-device env list sekiro
-device env inspect sekiro TEN_ENV
-device run sekiro hello --name gpu-demo --description 'Chạy script trong env có sẵn' --env TEN_ENV --gpu 0 -- python -u main.py
+n3xus env list sekiro
+n3xus env inspect sekiro TEN_ENV
+n3xus run sekiro hello --name gpu-demo --description 'Chạy script trong env có sẵn' --env TEN_ENV --gpu 0 -- python -u main.py
 ```
 
 Không cần activate env. CLI không tự tạo env hoặc cài package; agent phải inspect/reuse và hỏi bạn trước khi thay đổi. `env plan` xem kế hoạch; `env install/create/remove` có xác nhận. Base không được chỉnh sửa, env riêng không được xóa; tối đa 8 env do CLI tạo. Không đổi env đang được managed job/service dùng. `--gpu 0` chọn CUDA_VISIBLE_DEVICES, **không giữ độc quyền GPU**.
@@ -106,9 +106,9 @@ Không cần activate env. CLI không tự tạo env hoặc cài package; agent 
 ## Dừng và xóa khác nhau
 
 ```powershell
-device stop sekiro hello-test
-device jobs sekiro --all
-device clean sekiro JOB_ID
+n3xus stop sekiro hello-test
+n3xus jobs sekiro --all
+n3xus clean sekiro JOB_ID
 ```
 
 **Stop** dừng tiến trình và giữ code/log/kết quả. **Clean** hỏi xác nhận rồi xóa workspace/log/kết quả của đúng job đã kết thúc; fetch trước. Project revisions và Conda env vẫn giữ. CLI không tự xóa job chỉ vì bảng lịch sử dài. `remove DEVICE` chỉ bỏ đăng ký trên host, không dừng việc trên device.
@@ -131,9 +131,9 @@ workspace/
 Mỗi agent chọn ID riêng cho một phiên. Agent đọc ghi chú chung trước, kiểm tra lại máy/job rồi làm việc trong thư mục riêng. Ghi chú có tên file duy nhất để không ghi đè nhau; thư mục riêng là tổ chức dữ liệu, **không phải phân quyền bí mật**. Không lưu password/key/token vào bất cứ ghi chú nào. Thư mục legacy có thể chứa credential cũ: giữ ngoài Git, không upload hoặc sync; chúng không được CLI mới sử dụng.
 
 ```powershell
-device communication init human
-device communication show
-device communication snapshot
+n3xus communication init human
+n3xus communication show
+n3xus communication snapshot
 ```
 
 Snapshot là ảnh chụp trạng thái lúc chạy lệnh, không tự cập nhật sau khi host tắt. `SUMMARY.md` lưu ngữ cảnh lâu dài; STATUS.md/snapshot.json do CLI tạo. Agent lưu quyết định, job IDs, phần chưa xong và bước tiếp theo bằng `communication note`; agent khác đọc lại mà không phải dựa vào trí nhớ của một cuộc chat.
@@ -151,12 +151,14 @@ Agent có thể cập nhật tên/mô tả cho job cũ bằng job-note; các job
 `serve`/`service` dùng systemd user và cần linger; không phải flow tmux chính. Ví dụ:
 
 ```powershell
-device sync sekiro examples/http --project web
-device serve sekiro web --name hello-api --port 8088 -- python3 -u main.py --host '{bind}' --port '{port}'
-device service sekiro check hello-api
-device logs sekiro hello-api --service
+n3xus sync sekiro examples/http --project web
+n3xus serve sekiro web --name hello-api --port 8088 -- python3 -u main.py --host '{bind}' --port '{port}'
+n3xus service sekiro check hello-api
+n3xus logs sekiro hello-api --service
 ```
 
 Bind chỉ vào IP Tailscale; không có HTTP authentication/TLS tự động. Chỉ đưa endpoint cho người dùng khi kiểm tra request thật đã qua. Service stop/remove giữ kết quả, remove giữ receipt nên dùng tên mới khi tạo lại.
 
 [Hướng dẫn agent](docs/agent-usage.md) · [Workspace](workspace/README.md) · [Cấu trúc](docs/architecture.md) · [Lỗi](docs/troubleshooting.md) · [An toàn](docs/safety.md) · [Kết quả kiểm tra](docs/validation.md)
+
+Tên CLI hiện tại là **n3xus**. Chạy setup sẽ chuyển launcher device cũ do chính repo này tạo sang n3xus; không thay profile/job/device state và không xóa lệnh device của công cụ khác.

@@ -24,4 +24,4 @@ Record OS/version, commands, outcomes in validation.md. Không chạy reboot, pa
 
 ## Global CLI
 
-Run setup from repo, then move to another directory and run device doctor/demo; config must remain the same. On Windows verify PowerShell/CMD and user PATH without admin. On Ubuntu verify fresh Bash terminal and source ~/.bashrc. Setup again creates no duplicate PATH/startup entries. Unregister removes only owned launchers/managed blocks, preserving later PATH/profile edits, config and remote jobs. Modified launcher must refuse overwrite/delete. Re-run setup after moving checkout. These are host-only checks; do not stop device jobs.
+Run setup from repo, then move to another directory and run n3xus doctor/demo; config must remain the same. On Windows verify PowerShell/CMD and user PATH without admin. On Ubuntu verify fresh Bash terminal and source ~/.bashrc. Setup again creates no duplicate PATH/startup entries. Unregister removes only owned launchers/managed blocks, preserving later PATH/profile edits, config and remote jobs. Modified launcher must refuse overwrite/delete. Re-run setup after moving checkout. These are host-only checks; do not stop n3xus jobs.

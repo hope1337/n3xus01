@@ -30,7 +30,7 @@ def config():
     if not path.exists() and CONFIG == WORKSPACE/'config/devices.json' and LEGACY_CONFIG.exists():
         path = LEGACY_CONFIG
     if not path.exists():
-        raise DeviceError('Run device setup first.', 'setup_required')
+        raise DeviceError('Run n3xus setup first.', 'setup_required')
     value = read_json(path)
     if not isinstance(value, dict) or set(value) != {'schema', 'profile', 'devices'} or value['schema'] != SCHEMA:
         raise DeviceError('Invalid devices.json schema. Keep your profile ID when switching host OS.', 'invalid_config')
@@ -103,7 +103,7 @@ def remote(entry, profile, operation, **arguments):
 def selected(conf, device):
     name(device)
     if device not in conf['devices']:
-        raise DeviceError('Unknown device. Use device add NAME --address ... --user ...', 'unknown_device')
+        raise DeviceError('Unknown device. Use n3xus add NAME --address ... --user ...', 'unknown_device')
     return conf['devices'][device]
 
 def confirm(args, message):
@@ -139,7 +139,7 @@ def add_device(args):
     conf['devices'][device] = entry
     atomic_json(CONFIG, conf)
     return {'device': device, 'registered': True, 'ready': information['ready'], 'conda': information['conda'], 'state_directory': information['state_directory'],
-            'next': 'device status' if information['ready'] else f'device prepare {device} --install-tools'}
+            'next': 'n3xus status' if information['ready'] else f'n3xus prepare {device} --install-tools'}
 
 def status(conf):
     def inspect(item):
@@ -207,7 +207,7 @@ class ArgumentParser(argparse.ArgumentParser):
         raise DeviceError(message + ' (Use --help.)', 'invalid_argument')
 
 def parser():
-    cli = ArgumentParser(prog='device', description='Your devices. Your code. Direct SSH — no cluster, no images.')
+    cli = ArgumentParser(prog='n3xus', description='Your devices. Your code. Direct SSH — no cluster, no images.')
     cli.add_argument('--json', action='store_true', help='one JSON response, no colors/prompts')
     cli.add_argument('--color', choices=('auto', 'always', 'never'), default='auto')
     commands = cli.add_subparsers(dest='action')
@@ -352,7 +352,7 @@ def execute(args):
                 atomic_json(CONFIG, {'schema': SCHEMA, 'profile': uuid.uuid4().hex, 'devices': {}})
         config()
         registration = installation.register(ROOT,WORKSPACE) if not args.no_register else {'registered':False,'note':'Skipped command registration (--no-register).'}
-        return 'setup', {'ready': True, 'python': sys.version.split()[0], 'config': str(CONFIG), 'registered':registration['registered'], 'command_directory':registration.get('bin'), 'note':registration['note'], 'next': 'device add'}
+        return 'setup', {'ready': True, 'python': sys.version.split()[0], 'config': str(CONFIG), 'registered':registration['registered'], 'command_directory':registration.get('bin'), 'note':registration['note'], 'next': 'n3xus add'}
     if args.action == 'unregister':
         return 'unregister',installation.unregister(ROOT,WORKSPACE)
     if args.action == 'doctor':

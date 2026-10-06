@@ -425,7 +425,7 @@ def launch_job(request):
     root = root_for(request)
     require_owned(root)
     if not shutil.which('tmux'):
-        raise DeviceError('tmux missing. Run device prepare DEVICE --install-tools first.', 'tmux_missing')
+        raise DeviceError('tmux missing. Run n3xus prepare DEVICE --install-tools first.', 'tmux_missing')
     arguments = validate_argv(request['command'])
     gpu = gpu_selection(request)
     with locked(root):

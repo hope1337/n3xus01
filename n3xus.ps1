@@ -37,7 +37,7 @@ try {
     if ($deviceExit -eq 0 -and $actionPosition -ge 0 -and $deviceArguments[$actionPosition] -in @('setup', 'unregister')) {
         $deviceBin = Join-Path $env:LOCALAPPDATA 'PersonalDevice\bin'
         $pathEntries = @($env:PATH -split ';' | Where-Object { $_.TrimEnd('\') -ine $deviceBin.TrimEnd('\') })
-        if ((Test-Path -LiteralPath (Join-Path $deviceBin 'device.ps1')) -and $deviceArguments -notcontains '--no-register') {
+        if ((Test-Path -LiteralPath (Join-Path $deviceBin 'n3xus.ps1')) -and $deviceArguments -notcontains '--no-register') {
             $env:PATH = ($pathEntries + @($deviceBin)) -join ';'
         } elseif ($deviceArguments[$actionPosition] -eq 'unregister') {
             $userEntries = @([Environment]::GetEnvironmentVariable('Path', 'User') -split ';' | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') })

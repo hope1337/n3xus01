@@ -1,17 +1,17 @@
 # Agent: sử dụng CLI, không chỉnh sửa công cụ
 
-Đọc AGENTS.md trước. User giao task không tự cấp quyền sửa repo. Mặc định chỉ sử dụng; code task ở workspace/communication/agents/ID/work, kết quả vào downloads, ghi chú qua communication. Sau khi user setup đăng ký PATH, dùng `device` từ mọi thư mục. Nếu process hiện tại chưa nhận PATH, Windows dùng đường dẫn tuyệt đối tới device.ps1 của repo, Ubuntu tới device; không suy ra repo từ cwd. Thêm --json trước dấu --; phản hồi schema/ok/action/data hoặc error. Exit 0 nghĩa thao tác thành công, không nhất thiết job hoàn tất. Help vẫn là văn bản. Không mở dashboard/watch interactive trong agent.
+Đọc AGENTS.md trước. User giao task không tự cấp quyền sửa repo. Mặc định chỉ sử dụng; code task ở workspace/communication/agents/ID/work, kết quả vào downloads, ghi chú qua communication. Sau khi user setup đăng ký PATH, dùng `n3xus` từ mọi thư mục. Nếu process hiện tại chưa nhận PATH, Windows dùng đường dẫn tuyệt đối tới n3xus.ps1 của repo, Ubuntu tới device; không suy ra repo từ cwd. Thêm --json trước dấu --; phản hồi schema/ok/action/data hoặc error. Exit 0 nghĩa thao tác thành công, không nhất thiết job hoàn tất. Help vẫn là văn bản. Không mở dashboard/watch interactive trong agent.
 
 ## Bắt đầu phiên
 
 ```powershell
-.\device.ps1 communication init codex-20261006-a1 --json
-.\device.ps1 communication show --json
-.\device.ps1 status --json
-.\device.ps1 dashboard --once --json
-.\device.ps1 inspect sekiro --json
-.\device.ps1 env list sekiro --json
-.\device.ps1 env inspect sekiro TEN_ENV --json
+.\n3xus.ps1 communication init codex-20261006-a1 --json
+.\n3xus.ps1 communication show --json
+.\n3xus.ps1 status --json
+.\n3xus.ps1 dashboard --once --json
+.\n3xus.ps1 inspect sekiro --json
+.\n3xus.ps1 env list sekiro --json
+.\n3xus.ps1 env inspect sekiro TEN_ENV --json
 ```
 
 ID riêng mỗi phiên, không dùng folder của agent trước để ghi mới. Snapshot/handoff cũ phải được đối chiếu live. Chỉ các device đã đăng ký được hiển thị; CLI không quét toàn tailnet tự nhận máy lạ. Không đọc key/password/legacy kubeconfig để lấy status.
@@ -21,16 +21,16 @@ ID riêng mỗi phiên, không dùng folder của agent trước để ghi mới
 Viết code vào work/TASK; inspect secret và dependency. Không sửa examples hay scripts để viết workload. Tên job nên nói mục đích, mô tả một câu. Nếu --agent có mặt thì CLI yêu cầu --name và --description.
 
 ```powershell
-.\device.ps1 sync sekiro workspace/communication/agents/codex-20261006-a1/work/pdf-extract --project pdf-extract --json
-.\device.ps1 run sekiro pdf-extract --name extract-pdfs --description 'Đọc PDF và xuất text' --agent codex-20261006-a1 --env TEN_ENV --json -- python -u main.py
-.\device.ps1 job sekiro extract-pdfs --json
-.\device.ps1 logs sekiro extract-pdfs --json
+.\n3xus.ps1 sync sekiro workspace/communication/agents/codex-20261006-a1/work/pdf-extract --project pdf-extract --json
+.\n3xus.ps1 run sekiro pdf-extract --name extract-pdfs --description 'Đọc PDF và xuất text' --agent codex-20261006-a1 --env TEN_ENV --json -- python -u main.py
+.\n3xus.ps1 job sekiro extract-pdfs --json
+.\n3xus.ps1 logs sekiro extract-pdfs --json
 ```
 
 Lưu ID trả về. Trên một device, tên không trùng với job active; lịch sử có thể trùng tên nên dùng ID nếu ambiguous. jobs mặc định active; jobs --all xem lịch sử mọi máy. Mỗi job có workspace riêng của revision đã sync; agent chạy sau không sửa code của job trước.
 
 ```powershell
-.\device.ps1 job-note sekiro JOB_ID --summary 'Đã xử lý 40/100 file theo log' --phase extracting --progress 40 --agent codex-20261006-a1 --json
+.\n3xus.ps1 job-note sekiro JOB_ID --summary 'Đã xử lý 40/100 file theo log' --phase extracting --progress 40 --agent codex-20261006-a1 --json
 ```
 
 Summary/phase/progress là thông tin do agent chịu trách nhiệm, có note_author/note_updated_at; không đoán phần trăm từ thời gian. State/observed_at là đọc live. Tiến trình running có thể đang chờ; API phải request thật để kết luận ready. Job cũ thiếu name/description có thể được đặt lại qua job-note; không restart để đổi mô tả.
@@ -46,8 +46,8 @@ Chạy --gpu INDEX chỉ chọn CUDA device, không reservation. Kiểm tra sử
 ## Handoff
 
 ```powershell
-.\device.ps1 communication note codex-20261006-a1 --title 'PDF extraction handoff' --message-file workspace/communication/agents/codex-20261006-a1/work/handoff.txt --device sekiro --job JOB_ID --json
-.\device.ps1 communication snapshot --json
+.\n3xus.ps1 communication note codex-20261006-a1 --title 'PDF extraction handoff' --message-file workspace/communication/agents/codex-20261006-a1/work/handoff.txt --device sekiro --job JOB_ID --json
+.\n3xus.ps1 communication snapshot --json
 ```
 
 Nội dung note: mục tiêu, device/project/job ID, tiến trình đã kiểm tra lúc nào, kết quả ở đâu, lệnh/log chứng minh, approval đã có, phần chưa xong và cách tiếp tục. Notes có file riêng nên agent khác không ghi đè. Snapshot có timestamp và cả offline/errors; không lấy snapshot làm bằng chứng live. shared/SUMMARY.md dành cho ngữ cảnh bền vững, không xóa phần người khác. Never secrets. Runtime toàn bộ ở workspace, không force-add vào Git.
