@@ -135,7 +135,7 @@ print(json.dumps({'schema':1,'ok':True,'data':{'cpu_count':24,'gpus':[]}}),flush
         frames=[frame for frame in out.getvalue().split('\033[H\033[2J') if 'Refreshing' in frame]
         self.assertTrue(frames)
         for frame in frames:
-            self.assertIn('24.0/32.0',frame)
+            self.assertIn('8.0/32.0',frame)
             self.assertIn('TEST GPU',frame)
             self.assertIn('keep-job',frame)
         self.assertTrue(out.getvalue().endswith('\033[?25h\033[?1049l'))

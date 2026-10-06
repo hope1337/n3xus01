@@ -25,6 +25,7 @@ Report missing files, CLI access or local command capability. Do not recreate pr
 - No subagents or commits unless requested. Do not run `setup/add/prepare/remove/unregister` as part of a workload unless the user requested that administration.
 - Inspect/reuse Conda first. Ask before package installation or env creation/removal. No base changes, automatic Conda/driver installation or silent channel-term acceptance. `--yes` records approval already obtained.
 - Never store passwords, keys or tokens in code/config/notes/argv/logs. Sudo passwords belong only in a terminal; chat approval cannot authenticate sudo. Report blockers rather than claiming completion.
+- Sudo blocker: identify the device/user, exact operation/commands, reason/expected changes and blocked step; explain how the human can handle it in a terminal. Pause dependent work, continue independent authorized work, then verify and resume after it is handled. Do not drop the task; leave a project handoff if the session ends while waiting.
 - No unsolicited SSH/firewall/network changes or public listeners. Run trusted code: it has the SSH user's full permissions. Never stop unrelated jobs/tmux sessions or delete history to free resources or tidy a dashboard.
 
 ## Start an assigned task

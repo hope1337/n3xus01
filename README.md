@@ -73,7 +73,7 @@ n3xus jobs
 n3xus dashboard
 ```
 
-`jobs` xem job đang hoạt động trên mọi device; `jobs sekiro` lọc một máy; `jobs --all` thêm lịch sử. Status và dashboard hiển thị CPU(T) là số luồng logic, RAM khả dụng/tổng và VRAM trống/tổng theo GiB. Mỗi GPU có một dòng riêng; máy offline hoặc thiếu thông tin hiện dấu —/?. Dashboard tự cập nhật qua SSH và hiển thị job, không tự quản lý scheduler.
+`jobs` xem job đang hoạt động trên mọi device; `jobs sekiro` lọc một máy; `jobs --all` thêm lịch sử. Status, dashboard và inspect hiển thị RAM/VRAM **đang dùng/tổng (used/total)** theo GiB. RAM dùng = tổng − khả dụng; VRAM dùng = tổng − trống. CPU(T) là số luồng logic. Mỗi GPU có một dòng riêng; máy offline hoặc thiếu thông tin hiện dấu —/?. JSON giữ các số liệu gốc available/free/total để agent xử lý. Dashboard tự cập nhật qua SSH và hiển thị job, không tự quản lý scheduler.
 
 Trong terminal, thông tin về trước hiện trước: CPU/RAM có thể hiện trong lúc GPU còn `loading…`; device trả lời nhanh không phải đợi device chậm. Danh sách job đang chờ cũng có dòng loading riêng. Những lệnh khác (log, môi trường, kiểm tra dịch vụ…) có biểu tượng xoay khi đang chờ phản hồi. Loading không có nghĩa là offline; khi timeout/lỗi, CLI sẽ ghi rõ lỗi. `--json` hoặc chuyển output vào file vẫn trả một kết quả hoàn chỉnh, không kèm animation.
 
@@ -122,6 +122,8 @@ n3xus run sekiro my-project --name gpu-demo --description 'Chạy script trong e
 ```
 
 Không cần activate env. CLI không tự tạo env hoặc cài package; agent phải inspect/reuse và hỏi bạn trước khi thay đổi. `env plan` xem kế hoạch; `env install/create/remove` có xác nhận. Base không được chỉnh sửa, env riêng không được xóa; tối đa 8 env do CLI tạo. Không đổi env đang được managed job/service dùng. `--gpu 0` chọn CUDA_VISIBLE_DEVICES, **không giữ độc quyền GPU**.
+
+Nếu cần sudo, agent phải báo device/user nào, cần chạy lệnh gì, vì sao, sẽ thay đổi gì và bước nào đang bị chặn; hướng dẫn bạn xử lý qua terminal. Agent tạm dừng phần phụ thuộc, làm phần độc lập nếu có, rồi kiểm tra kết quả và tiếp tục task sau khi bạn xử lý xong. Không bỏ task hoặc báo hoàn thành khi còn bị chặn. Đồng ý trong chat không thay mật khẩu sudo; không gửi/lưu mật khẩu trong chat/repo.
 
 ## Dừng và xóa khác nhau
 

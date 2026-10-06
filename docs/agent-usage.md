@@ -52,6 +52,8 @@ Inspect Conda before changing it. `env plan DEVICE ENV --package pypdf --pip --j
 
 --gpu INDEX selects CUDA_VISIBLE_DEVICES, not a reservation. Inspect GPU use and never stop unrelated training. No public listeners. prepare --install-tools/--enable-linger may require a sudo password in a terminal; chat approval does not supply it. Report the blocked step; do not skip it and claim success.
 
+For every sudo blocker, tell the human: device and SSH user; exact proposed commands/operation; reason for root; expected changes; blocked task step; and the terminal action needed to authorize/authenticate or perform it. Do not run it before the necessary approval/authentication is available. Continue independent authorized steps, but keep dependent work pending. Do not abandon the objective or mark it complete. When the human confirms they handled it, inspect the actual result, then resume the original task. If waiting outlasts the session, write a project handoff with completed work, the blocker and the next action. Do not ask for a password in chat or save one; a chat "yes" cannot authenticate sudo.
+
 ## Handoff
 
 ```text

@@ -58,3 +58,15 @@ Shared device/profile/launcher configuration stays in CLI workspace/config. Setu
 Checks: `python tests/static_check.py` PASS; unittest discovery **85 tests: 79 passed, 6 skipped**; Git Bash `bash -n n3xus` PASS; native Windows launcher script PASS (PowerShell 5.1/7); git diff --check PASS. Nine added offline tests cover two-project note isolation, nested discovery/explicit override, stable marker and ignore-file preservation, refusal of missing/tool-repo/invalid contexts before remote submission, path escapes/literal program flags, project-only snapshots/receipts, real archive extraction into default agent downloads and overwrite refusal, project-independent global setup/status, and receipt routing after submission. Updated receipt-failure regression to select a real isolated project before simulating disk failure.
 
 Tests use isolated temporary folders and mocked SSH responses; no real project was initialized, no existing user communication was migrated, no actual device requests/helper refresh/job stops/service/package changes or commit. Native Linux integration remains skipped on this Windows host. Live multi-project workload acceptance on devices is not claimed by these offline results.
+
+## Project discussion overview — 2026-10-06
+
+Added docs/PROJECT_OVERVIEW.md as a Vietnamese, standalone discussion brief covering user needs, current architecture, independent projects, CLI/agent workflows, boundaries, source map, historical validation and open design questions. Historical device/LLM observations are explicitly not live state; suggestions are not approved implementation plans. static_check.py and git diff --check PASS. Documentation-only: unit/launcher tests were not rerun; the 85-test result above belongs to the preceding code validation. No SSH, device changes or commit.
+
+## Sudo blocker workflow and used/total display — 2026-10-06
+
+Expanded AGENTS.md, START_HERE.md, agent guide, README and project overview: agents must identify the device/user, exact privileged operation/commands, reason, expected changes, blocked step and terminal action; pause dependent work while continuing independent authorized work, preserve the task/handoff, verify and resume after the blocker is handled. Chat approval is not sudo authentication. No new privilege mechanism was implemented.
+
+Human status/dashboard/inspect now show RAM/VRAM used/total in GiB: RAM total minus available, GPU total minus free. Missing/inconsistent metrics remain unknown, never fabricated as zero. JSON/probe fields remain unchanged. Updated the existing refresh regression expectation to used RAM; historical validation sections above retain their original metric descriptions.
+
+Checks: static_check.py PASS; unittest discovery **85 tests: 79 passed, 6 skipped**; Git Bash syntax PASS; native Windows PowerShell 5.1/7 launcher/demo checks PASS; git diff --check PASS. Manual offline checks verified subtraction, full/empty GPU, unknown/invalid inputs and inspect formatting. No new tests needed for the reversible presentation change. No SSH, sudo/device configuration, helper refresh or job changes. Native Linux/live-device acceptance remains unverified here.

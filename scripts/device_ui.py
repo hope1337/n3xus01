@@ -42,10 +42,11 @@ def crop(value, maximum):
 
 
 def memory_pair(free, total, divisor=1):
-    """Use available RAM/free VRAM; missing metrics are not zero."""
+    """Used/total: RAM is total minus available, VRAM is total minus free."""
     def value(number):
         return f'{number/divisor:.1f}' if isinstance(number,(int,float)) and number >= 0 else '?'
-    return value(free)+'/'+value(total)
+    used=total-free if isinstance(free,(int,float)) and isinstance(total,(int,float)) and 0 <= free <= total else None
+    return value(used)+'/'+value(total)
 
 class UI:
     def __init__(self, color='auto'):
@@ -65,7 +66,7 @@ class UI:
         print(self.paint('✓ ' if good else '! ', '32' if good else '33') + sanitize(text))
 
     def resources(self, devices, jobs=False):
-        headers=['DEVICE','SSH','ACTIVE JOBS' if jobs else 'READY','CPU(T)','RAM AVAIL/TOTAL','GPU','VRAM FREE/TOTAL']
+        headers=['DEVICE','SSH','ACTIVE JOBS' if jobs else 'READY','CPU(T)','RAM USED/TOTAL','GPU','VRAM USED/TOTAL']
         rows=[]
         for device in devices:
             if device.get('loading'):
@@ -132,7 +133,7 @@ class UI:
             for d in data['devices']:
                 if d.get('error'):
                     self.message(f"{d['name']}: {d['error']}", False)
-            print('\n' + self.paint('Memory: GiB free/total (RAM: available). CPU(T): logical threads.','2'))
+            print('\n' + self.paint('Memory: GiB used/total (RAM: total - available). CPU(T): logical threads.','2'))
             print(self.paint('SSH online ≠ free GPU. Use inspect DEVICE before running heavy work.', '2'))
         elif action in ('jobs','dashboard'):
             records=data['jobs']
@@ -142,7 +143,7 @@ class UI:
             if action=='dashboard':
                 print('\n'+self.paint('DEVICES','1;36'))
                 self.resources(data['devices'],jobs=True)
-                print(self.paint('Memory: GiB free/total (RAM: available). CPU(T): logical threads.','2'))
+                print(self.paint('Memory: GiB used/total (RAM: total - available). CPU(T): logical threads.','2'))
             for device in data.get('devices',[]):
                 if device.get('jobs_error'): self.message(device['name']+': '+device['jobs_error'],False)
             print('\n'+self.paint('Observed '+data['observed_at']+' · '+('history included' if data['include_history'] else 'active jobs only; use --all for history'),'2'))
@@ -177,11 +178,13 @@ class UI:
         elif action == 'logs':
             print(sanitize(data['log']) or '(no output yet)')
         elif action == 'inspect':
-            self.table(['PROPERTY', 'VALUE'], [[k, 'loading…' if k in data.get('loading_fields',[]) else data.get(k, '—')] for k in ('hostname', 'os', 'python', 'cpu_count', 'memory_available_gib', 'disk_free_gib', 'conda', 'tmux', 'linger')])
+            properties=[[k, 'loading…' if k in data.get('loading_fields',[]) else data.get(k, '—')] for k in ('hostname', 'os', 'python', 'cpu_count', 'disk_free_gib', 'conda', 'tmux', 'linger')]
+            properties.insert(4,['ram_used_total_gib',memory_pair(data.get('memory_available_gib'),data.get('memory_total_gib'))])
+            self.table(['PROPERTY', 'VALUE'],properties)
             if 'gpus' in data.get('loading_fields',[]): self.message('GPU: loading…',False)
             if data.get('gpus'):
                 print('\n' + self.paint('GPU', '1;36'))
-                self.table(['NAME', 'VRAM FREE / TOTAL', 'UTILIZATION'], [[g['name'], f"{g['free_mib']} / {g['total_mib']} MiB", f"{g['utilization']}%"] for g in data['gpus']])
+                self.table(['NAME', 'VRAM USED / TOTAL (GiB)', 'UTILIZATION'], [[g['name'], memory_pair(g.get('free_mib'),g.get('total_mib'),1024), f"{g['utilization']}%"] for g in data['gpus']])
             for warning in data.get('warnings', []):
                 self.message(warning, False)
         else:

@@ -108,7 +108,7 @@ def draw(data,selection,ui,refreshing=None):
     ui.table(['','DEVICE','NAME','STATE','PHASE / PURPOSE'],rows)
     print('\n'+ui.paint('j/k select · i details · l logs · s stop · d delete · h history · r refresh · q quit','2'))
     print(ui.paint('Notes/progress are reported by agents, not automatic execution status.','2'))
-    print(ui.paint('Memory: GiB free/total (RAM: available). CPU(T): logical threads.','2'))
+    print(ui.paint('Memory: GiB used/total (RAM: total - available). CPU(T): logical threads.','2'))
     for device in data['devices']:
         if device.get('jobs_error'): ui.message(device['name']+': '+device['jobs_error'],False)
     sys.stdout.flush()
