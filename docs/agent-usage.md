@@ -1,35 +1,34 @@
 # Giao việc cho agent
 
-Agent cần quyền chạy command local ở checkout repo và quyền mạng tới tailnet. OpenCode hoặc ChatGPT Work local có thể gọi CLI; chat chỉ có text/cloud không tự dùng được máy bạn. Chưa cung cấp MCP/plugin hoặc yêu cầu cài agent trên device.
+Agent cần chạy lệnh trên host tại repo. Không cần MCP. Windows dùng `.\device.ps1`, Ubuntu `./device`. `--json` đặt trước/sau lệnh, trước dấu `--`; stdout là một JSON với schema, ok, data hoặc error. Exit 0 là thành công của thao tác, chưa chắc job đã hoàn tất. Exit 1 là lỗi, 130 là host bị ngắt. Help vẫn là văn bản.
 
-Đọc `AGENTS.md`, `devices.yml` và `cluster help` trước. Windows dùng `.\cluster.ps1`, Ubuntu dùng `./cluster`. Các ví dụ dưới dùng cú pháp Ubuntu; đổi entry point trên Windows.
+Prompt gợi ý:
 
-```bash
-./cluster status
-./cluster run home-4090 --image busybox:1.37.0 -- sh -c 'echo hello > /data/results/hello.txt'
-./cluster jobs
-./cluster logs task-xxxxxxxxxxxx
-./cluster wait task-xxxxxxxxxxxx --timeout 600
-./cluster delete-job task-xxxxxxxxxxxx
+> Đọc AGENTS.md và docs/agent-usage.md. Xem device nào online và tài nguyên hiện tại. Tôi muốn chạy code trong thư mục X trên genichiro. Inspect Conda trước và dùng env phù hợp. Nếu thiếu package/env thì giải thích và hỏi tôi trước khi cài. Gửi code, chạy nền, xem log và lấy kết quả.
+
+> Tôi muốn host một LLM trên sekiro. Kiểm tra GPU/RAM/disk và công cụ đã có trước. Đề xuất model phù hợp, hỏi trước khi tải model lớn/cài package. Dùng service Tailscale, kiểm tra endpoint thật rồi trả URL và cách gọi. Không mở public port.
+
+Quy trình tác vụ:
+
+```powershell
+.\device.ps1 status --json
+.\device.ps1 inspect genichiro --json
+.\device.ps1 env list genichiro --json
+.\device.ps1 env inspect genichiro TEN_ENV --json
+.\device.ps1 sync genichiro DUONG_DAN_CODE --project extract --json
+.\device.ps1 run genichiro extract --env TEN_ENV --gpu 0 --json -- python -u main.py
 ```
 
-GPU:
+Lưu ID do run trả; dùng jobs/logs/wait. Khi completed, fetch tải thư mục DEVICE_OUTPUT_DIR; code cần ghi kết quả vào biến đó. Hoặc fetch --path THU_MUC_TUONG_DOI tải một thư mục trong workspace. Download từ chối ghi đè, giới hạn 64 MiB. Dataset/checkpoint lớn giữ trên disk device.
 
-```bash
-./cluster test --gpu home-4090
-./cluster run home-4090 --image nvidia/cuda:12.5.0-base-ubuntu22.04 --gpu -- nvidia-smi
+```powershell
+.\device.ps1 env plan genichiro TEN_ENV --package pypdf --pip --json
 ```
 
-`check`/`test --gpu` chạy CUDA nbody benchmark thực sự. `run --gpu` yêu cầu **một GPU**, runtime nvidia và node đã khai báo GPU; không chia GPU/tự phân phối model nhiều máy. CUDA image/code của người dùng cần tương thích driver; image ví dụ cần driver hỗ trợ CUDA 12.5, không phải test tương thích mọi driver.
+Trình bày plan cho người dùng. Chỉ sau khi được đồng ý mới dùng env install cùng flags và --yes. Nếu tạo mới: env create DEVICE TEN_MOI --python 3.11 --yes. Không chạm base hoặc env riêng khi chưa có yêu cầu; ngoài managed jobs, user có thể đang chạy notebook/training riêng.
 
-`run` trả job name, không giữ tiến trình host. `wait` kiểm tra Complete/Failed, in log khi kết thúc; timeout giữ job để tiếp tục xem/dừng. Không tự retry computation lỗi (tránh ghi đè kết quả), không auto-delete dữ liệu. User jobs không có TTL tự xóa; hãy `delete-job` sau khi lấy log. Namespace user jobs: `personal-compute-jobs`; smoke test riêng: `personal-compute-smoke`.
+Host service bằng serve, với {bind}/{port} trong argv, xem ví dụ README. Dịch vụ không tự có authentication; tailnet ACL vẫn do user quản lý. services → logs DEVICE TEN_SERVICE → service DEVICE check TEN_SERVICE. Nếu model load lâu, chờ và check lại; không coi một process active là endpoint hoạt động.
 
-Job chạy trên đúng device, UID/GID của SSH user, không root. Datasets chỉ đọc; results/checkpoints được ghi. Thư mục mặc định ở device được mount dưới `/data`. Một device khác không tự có dataset đó. Image phải chứa code/dependencies hoặc code phải sẵn trong thư mục được mount; repo không tự đóng gói project/đẩy file/download dataset cho bạn.
+Agent được viết code trong thư mục source riêng, sync và chạy literal argv. Không tự upload toàn home hoặc repo chứa secrets; exclusions chỉ hỗ trợ, không bảo đảm phát hiện mọi secret. CLI không biết độ phù hợp của package/model, agent phải xem cấu hình và chọn. Không tự download model lớn hay đổi driver. Ollama/llama.cpp là công cụ khác nhau: xác minh executable thực tế trước.
 
-Đề nghị prompt:
-
-> Đọc AGENTS.md và devices.yml. Kiểm tra home-4090 sẵn sàng. Chạy bài test GPU qua command của repo, chờ kết quả và báo log. Không reset cluster hoặc thay driver.
-
-Đừng đọc/in/share `.cluster`, join-token hay kubeconfig; đó là quyền cluster-admin. Không reset, sửa host firewall, thay driver đang hoạt động hoặc triển khai privileged workload nếu người dùng chưa yêu cầu. Không tự chọn image không tin cậy vì job được đọc dataset và ghi vào results/checkpoints của người dùng.
-
-Nguồn kết nối agent: [OpenCode MCP](https://opencode.ai/docs/mcp-servers/), [ChatGPT Work local access](https://learn.chatgpt.com/docs/remote-connections). CLI này chưa cấu hình các kết nối đó thay người dùng.
+Mất host kết nối: job/service đã gửi vẫn chạy, agent không tiếp tục suy nghĩ khi host tắt. Bật host lại → status/jobs/services/logs. Không tự retry một mutation vừa timeout: inspect trước để tránh gửi trùng. Device reboot: jobs có thể interrupted, services tự khởi động lại. Hỏi trước khi chạy lại việc tốn tài nguyên hoặc ghi dữ liệu.

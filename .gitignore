@@ -1,6 +1,8 @@
 # Local inventory and credentials must never enter Git.
 /inventory/hosts.yml
 /devices.yml
+/devices.json
+/downloads/
 /.cluster/
 /.venv/
 /.cache/
@@ -15,7 +17,5 @@ __pycache__/
 id_rsa*
 id_ed25519*
 kubeconfig*
-# This is Ansible source code, not a generated kubeconfig/credential file.
-!roles/k3s_node/tasks/kubeconfig.yml
 *token*
 *authkey*

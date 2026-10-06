@@ -1,8 +1,0 @@
-The manifest kubernetes/nvidia-device-plugin.yml is adapted from:
-https://github.com/NVIDIA/k8s-device-plugin/blob/v0.17.1/deployments/static/nvidia-device-plugin.yml
-
-Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
-Licensed under the Apache License, Version 2.0; see LICENSE in this directory.
-
-Local modifications: namespace/name/ownership label, explicit GPU node selector,
-NVIDIA RuntimeClass, runtime environment, and hostPath type.

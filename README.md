@@ -1,98 +1,93 @@
-# Máy của bạn, tài nguyên cho agent
+# Personal Device · gửi code qua SSH
 
-**Chuẩn bị một lần → thêm device → kiểm tra → mở agent và giao việc.**
+Laptop **host** điều khiển các máy Ubuntu **device** qua Tailscale + SSH. Không còn K3s, Ansible, image hay máy đầu sỏ. Host có thể tắt sau khi gửi tác vụ; trạng thái và log nằm trên device.
 
-- **Host:** laptop Windows hoặc Ubuntu; nơi mở OpenCode/ChatGPT Work.
-- **Device:** máy Ubuntu chạy công việc, có thể có NVIDIA GPU.
-- Device đầu tiên giữ K3s chạy thường trực, đồng thời chạy workload. Các device sau là workers. Host không phải giữ Kubernetes chạy.
+## Bắt đầu
 
-## Bạn tự chuẩn bị trước
+Host cần **Python 3.10+ và OpenSSH**; terminal Conda hiện tại của bạn dùng được. Device cần Ubuntu 22.04+, Python 3.10+, Tailscale và SSH key đã chuẩn bị. Hãy SSH thử một lần để xác nhận host key. Conda và driver NVIDIA có sẵn thì giữ nguyên.
 
-Host và device đã có Tailscale. Bạn SSH được từ host vào device bằng key, đã xác minh host key, không hỏi SSH password. User trên device có sudo; **sudo vẫn có thể hỏi password** lúc cài đặt.
-
-Device dùng Ubuntu 22.04/24.04, ít nhất 2 CPU, 2GB RAM, 10GiB trống và không bật swap. Chọn máy chưa cài Kubernetes. Host Ubuntu khuyến nghị 24.04. GPU flow hỗ trợ NVIDIA trên Ubuntu x86_64, gồm RTX 4090.
-
-## 1. Chuẩn bị host — một lệnh
-
-Chạy trong thư mục repo vừa clone:
-
-| Windows PowerShell | Ubuntu terminal |
-| --- | --- |
-| `.\cluster.ps1 setup` | `./cluster setup` |
-
-Repo tự cài công cụ; những lần sau không cần activate môi trường hoặc nhớ lệnh Ansible. Windows dùng Ubuntu-24.04 trong WSL và **SSH/key sẵn có của Windows**, không chép key hoặc yêu cầu join Tailscale trong WSL. Windows có thể hỏi quyền admin/restart khi cài WSL lần đầu. [Chi tiết host](docs/laptop-setup.md).
-
-## 2. Thêm device
-
-Chạy lệnh rồi trả lời tên máy, địa chỉ Tailscale, SSH user và có dùng GPU không:
+**Windows — PowerShell tại thư mục repo:**
 
 ```powershell
-.\cluster.ps1 add-device
+.\device.ps1 setup
+.\device.ps1 add genichiro --address 100.71.182.15 --user hope
+.\device.ps1 prepare genichiro --install-tools --enable-linger
+.\device.ps1 status
 ```
+
+**Ubuntu — terminal tại thư mục repo:**
 
 ```bash
-./cluster add-device
+./device setup
+./device add genichiro --address 100.71.182.15 --user hope
+./device prepare genichiro --install-tools --enable-linger
+./device status
 ```
 
-Hoặc khai báo hết trong một command; thay **IP và user** bằng của bạn:
+Bạn chỉ thay **tên device, địa chỉ Tailscale, SSH user**. `add` không cần sudo: chỉ ghi helper và trạng thái trong home của user trên device. `prepare` hỏi xác nhận, có thể hỏi mật khẩu sudo của **device** để cài tmux nếu thiếu và bật linger. Linger giữ dịch vụ user hoạt động khi logout và sau reboot. Không cài Conda/GPU driver, không sửa SSH hay firewall. Windows chạy trực tiếp, **không cần WSL**.
+
+`devices.json` được tạo tự động và không đưa vào Git. Nếu Conda nằm ở nơi riêng, thêm `--conda /duong/dan/bin/conda` vào lệnh `add`. SSH key mặc định được dùng; có thể thêm `--key DUONG_DAN_KEY` trên host. Không cần điền password.
+
+Mở `device` không kèm lệnh để vào menu; `device --help` xem danh sách. Ví dụ dưới dùng Windows; Ubuntu thay `.\device.ps1` bằng `./device`.
+
+## Thử gửi code
 
 ```powershell
-.\cluster.ps1 add-device home-4090 --address 100.101.102.103 --user student --gpu
+.\device.ps1 sync genichiro examples/hello --project hello
+.\device.ps1 run genichiro hello -- python3 -u main.py
+.\device.ps1 jobs genichiro
 ```
 
-```bash
-./cluster add-device home-4090 --address 100.101.102.103 --user student --gpu
-```
-
-Thông tin được lưu trong **`devices.yml`**, Git ignore. Máy đầu tiên tự thành server; máy tiếp theo tự thành worker. Không có secret trong file này. Nếu SSH cần key khác mặc định, thêm `--key PATH` (chỉ đường dẫn).
-
-Repo push qua SSH, bật service tự chạy sau reboot và lấy quyền điều khiển về host. Với GPU: giữ driver đang hoạt động, cài driver khi chưa có, cài runtime và NVIDIA device plugin. Nếu cài driver mới, lệnh dừng, báo bạn **reboot device** rồi chạy lại cùng command. Không tự reboot hoặc sửa driver lỗi.
-
-Retry hoặc lấy lại quyền truy cập sau khi đổi Windows/Ubuntu: dùng lại **cùng `devices.yml`** rồi chạy `add-device home-4090`; không cần nhập lại. Chạy lại không reset cluster. Thêm máy lab bằng `add-device lab-01 --address ... --user ...`, không `--gpu` nếu không cần GPU.
-
-## 3. Kiểm tra đã sẵn sàng
+`run` trả một ID như `job-...`. Thay `JOB_ID` bằng ID đó:
 
 ```powershell
-.\cluster.ps1 check
+.\device.ps1 logs genichiro JOB_ID
+.\device.ps1 wait genichiro JOB_ID
+.\device.ps1 fetch genichiro JOB_ID --output downloads/hello
 ```
 
-```bash
-./cluster check
-```
+Đọc `downloads/hello/hello.txt` là hoàn tất flow. Chạy `check genichiro` để kiểm tra SSH/helper/tmux; đây không phải bài test GPU. `inspect genichiro` xem RAM, VRAM, Conda. Online không có nghĩa GPU đang rảnh.
 
-Lệnh kiểm tra node Ready, chạy CPU workload và truy cập nginx qua mạng nội bộ từ mỗi device; với GPU, chạy **CUDA benchmark thật**, không chỉ `nvidia-smi`. Kết quả đạt yêu cầu có `PASS`. Không mở service ra Internet. Khi đang chạy training chiếm GPU, hãy đợi job xong trước khi check.
-
-## 4. Mở agent và giao việc
-
-Cho agent quyền chạy command local và yêu cầu nó đọc **[AGENTS.md](AGENTS.md)** cùng **[hướng dẫn giao việc](docs/agent-usage.md)**. Chưa cần MCP; đây không phải tự động kết nối mọi chat cloud với laptop.
-
-Ví dụ thử việc nhỏ trên GPU:
+## Conda và GPU
 
 ```powershell
-.\cluster.ps1 run home-4090 --image nvidia/cuda:12.5.0-base-ubuntu22.04 --gpu -- nvidia-smi
+.\device.ps1 env list genichiro
+.\device.ps1 env inspect genichiro TEN_ENV
+.\device.ps1 run genichiro hello --env TEN_ENV --gpu 0 -- python -u main.py
 ```
 
-```bash
-./cluster run home-4090 --image nvidia/cuda:12.5.0-base-ubuntu22.04 --gpu -- nvidia-smi
+Agent đọc env trước, đề xuất bổ sung hoặc tạo mới, **hỏi bạn trước khi cài**. CLI không tự tạo env. Tối đa 8 env do CLI tạo; env đang chạy tác vụ/dịch vụ được bảo vệ. `--gpu 0` chọn GPU qua `CUDA_VISIBLE_DEVICES`, không chia hay giữ độc quyền GPU. Dùng `--` trước chương trình; không cần activate env.
+
+## Host một dịch vụ
+
+Ví dụ HTTP không cần thêm package:
+
+```powershell
+.\device.ps1 sync genichiro examples/http --project web
+.\device.ps1 serve genichiro web --name hello-api --port 8088 -- python3 -u main.py --host '{bind}' --port '{port}'
+.\device.ps1 service genichiro check hello-api
+.\device.ps1 services genichiro
 ```
 
-Lệnh trả tên job; agent dùng `jobs`, `logs JOB`, `wait JOB`, `delete-job JOB`. Bài CUDA trong `check` là kiểm tra tính toán GPU; ví dụ trên chỉ giúp làm quen luồng giao việc.
+CLI trả endpoint Tailscale. Dịch vụ dùng systemd user, tự khởi động lại sau reboot khi Tailscale sẵn sàng; host không cần treo. Tác vụ `run` dùng tmux, tiếp tục sau khi host tắt nhưng **không tự chạy lại sau device reboot**. Chương trình dịch vụ phải hỗ trợ địa chỉ bind/port; agent tự viết code hoặc dùng công cụ có sẵn, không cần đóng image. Endpoint không có xác thực HTTP tự động: chỉ gọi trong tailnet của bạn và dùng quyền Tailscale phù hợp.
 
-Dataset/checkpoint/kết quả nằm trên device, mặc định:
+## Dừng và dọn
 
-```text
-/srv/personal-compute/data/datasets/
-/srv/personal-compute/data/checkpoints/
-/srv/personal-compute/data/results/
+```powershell
+.\device.ps1 stop genichiro JOB_ID
+.\device.ps1 clean genichiro JOB_ID
+.\device.ps1 service genichiro stop hello-api
+.\device.ps1 service genichiro remove hello-api
 ```
 
-Trong job, chúng nằm tại `/data/datasets` (chỉ đọc), `/data/checkpoints`, `/data/results`. Công việc chạy trên device bạn chọn, dùng quyền user Ubuntu của bạn. Code/thư viện phải có trong image hoặc sẵn trên device; repo không tự upload dataset hay biến nhiều VRAM thành một GPU lớn.
+`clean` hỏi trước và xóa **kết quả/log/workspace của đúng job đã kết thúc**; tải kết quả trước. Gỡ service giữ workspace/kết quả và receipt; dùng tên mới nếu tạo lại. `env remove` chỉ gỡ env do CLI tạo, hỏi trước; env riêng/base được giữ. `remove DEVICE` chỉ bỏ tên khỏi config host, không dừng việc trên device.
 
-Không phải bật terminal giữ kết nối. Tailscale và K3s chạy nền. Công việc đã gửi và đủ dữ liệu trên device tiếp tục chạy khi đóng agent/tắt host.
+## Giao việc cho agent
 
-## Khi cần xử lý thêm
+Mở agent ngay trong repo, cho phép chạy lệnh local và yêu cầu đọc [AGENTS.md](AGENTS.md) + [hướng dẫn agent](docs/agent-usage.md). Agent có thể inspect → gửi code → chạy/host → xem log → trả kết quả hoặc endpoint. Thêm `--json` để đọc dữ liệu có cấu trúc. Không cần MCP hay server điều phối.
 
-- `status`: chỉ xem trạng thái; `test --gpu home-4090`: chạy lại riêng bài GPU.
-- `check --static`: kiểm tra source, không SSH, không chạy workload.
-- `reset DEVICE --yes-delete-cluster`: **xóa workload/database/local PV của K3s**, giữ các thư mục data riêng, Tailscale và driver. Reset workers trước server. Không có backup, HA hoặc tự chuyển vai trò khi server hỏng.
-- [Lỗi thường gặp](docs/troubleshooting.md) · [Kiểm chứng máy thật](docs/acceptance.md) · [Kiểm tra đã chạy](docs/validation.md) · [Chi tiết an toàn](docs/safety.md).
+Đổi Windows ↔ Ubuntu: giữ **cùng devices.json**, chuẩn bị SSH/key ở OS mới rồi `setup` và `status`. Không setup lại device. SSH key path có thể cần đổi theo OS; đừng tạo profile mới nếu muốn đọc lịch sử cũ.
+
+Sync chỉ dành cho code, giới hạn 64 MiB; không upload dataset/model lớn. Code chạy với quyền SSH user, có thể đọc dữ liệu của user đó: đây không phải sandbox. Bạn/agent tự dùng đường dẫn dataset có sẵn trên device.
+
+[Chi tiết cấu trúc](docs/architecture.md) · [Lỗi thường gặp](docs/troubleshooting.md) · [An toàn](docs/safety.md) · [Kết quả kiểm tra](docs/validation.md)

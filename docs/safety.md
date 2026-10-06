@@ -1,21 +1,12 @@
-# Giới hạn và lựa chọn kỹ thuật
+# Phạm vi an toàn
 
-**Network:** API server bind/advertise IP Tailscale, TLS verify được giữ. Kubelet dùng IP Tailscale, read-only port tắt. NodePort chỉ trên Tailscale IP. Flannel dùng tailscale0, VXLAN; các device cần được tailnet policy cho phép TCP 6443/10250 và UDP 8472 giữa chúng. Nginx test là ClusterIP. Không public ingress, router port-forward, Tailscale auth key hay sửa UFW. K3s/CNI vẫn tạo interfaces, routes và iptables để Pod networking hoạt động; đây không phải setup không tác động networking.
-
-**Host:** không là Kubernetes node. Windows dùng WSL2 và Windows SSH bridge; backend/state Linux không chạy service riêng để giữ kết nối. WSL tới Tailscale API phải được Windows VPN/network cho phép; repo không tự sửa .wslconfig hoặc firewall khi bị chặn. Không copy keys, thay known_hosts hoặc dùng StrictHostKeyChecking=no.
-
-**Ownership:** một server SQLite, workers K3s agent (khác với AI agent). Role/server address/node name/version/data_root/cluster_id cố định sau khi nhận quản lý. Marker root-only schema 2, dưới `/var/lib/personal-compute-v1`; từ chối Kubernetes có sẵn/marker schema 1, version/IP/config đổi, services/drop-ins lạ và fingerprint service/uninstaller đổi. Không có force-adopt, automatic upgrade hay automatic promotion. Nếu đã dùng repo V1 cũ trên máy thật, không tự xóa marker để chuyển sang bản này; đây là workflow mới, cần migration được kiểm chứng riêng.
-
-**Credentials:** devices.yml/inventory generated chỉ có metadata và đường dẫn. Kubeconfig và join token lưu private trên filesystem Linux, không Git; tasks credential no_log. Cluster-admin dùng cho host là lựa chọn personal cluster, không phải mô hình multi-user không tin cậy. Clone repo source không sao chép credential; lấy lại qua add-device server bằng SSH.
-
-**Data:** `/srv/personal-compute/data` mặc định, hoặc normalized path riêng dưới /srv,/data,/mnt,/home. Không cho system/K3s paths hoặc symlink trong path. Chỉ tạo directory còn thiếu; không chmod/chown file/dataset đã có. Workload không root, dataset mount read-only, kết quả ghi bằng quyền SSH user. Namespace job cho phép hostPath để mount data; các manifest do CLI tạo không privileged/hostNetwork/hostPID và không mount root filesystem. Repo không upload/sync/backup dataset hoặc đảm bảo disk failure recovery.
-
-**GPU:** Ubuntu x86_64 NVIDIA. Giữ driver hoạt động. Nếu không có driver package, cài Ubuntu recommended driver rồi dừng để người dùng reboot/MOK nếu cần. Driver package có mà nvidia-smi lỗi thì dừng, không ghi đè. Với runtime có sẵn thì verify/giữ nguyên; thiếu mới thêm signed NVIDIA repository và toolkit 1.20.1-1. Không sửa Docker/system containerd config; K3s tự discover `/usr/bin/nvidia-container-runtime` khi startup. Device plugin v0.17.1 chỉ trên nodes được CLI label GPU, có runtimeClass nvidia. Thêm GPU cho node đã dùng có thể cần restart K3s để discover runtime; không làm giữa training đang chạy. Không GPU Operator, Helm, time slicing hoặc MIG.
-
-**Reset:** user xác nhận rõ, kiểm tra identity/artifacts trước uninstall. Giữ separate data_root, driver/toolkit, SSH/Tailscale. Official K3s uninstaller vẫn xóa local PV dưới `/var/lib/rancher/k3s/storage`, kể cả nếu người dùng tự tạo PVC ngoài workflow data của repo. Uninstaller node-wide nên block server khi còn workers và Kubernetes distributions khác. Sau worker uninstall, CLI delete Node để dọn node password và cho rejoin. Nếu bước đó lỗi vì API mất kết nối, đọc troubleshooting để dọn stale Node trước rejoin.
-
-Script generated upstream có dòng `tailscale set --advertise-routes=`; Ansible thay đúng dòng đó bằng no-op, kiểm tra rồi fingerprint để reset không xóa advertised routes sẵn có. Phần dọn K3s còn lại giữ nguyên.
-
-**Không làm:** HA, backup/restore, tự chuyển server, GitOps, monitoring, storage cluster, agent/MCP server. Nếu server mất và không có backup, dựng cluster mới; data ở ổ device còn nhưng cần khai báo/mount lại. Tắt host không dừng job đã submit và đủ data trên device; mất server thì không quản lý được cluster qua API.
-
-Nguồn: [K3s flags](https://docs.k3s.io/cli/server), [K3s NVIDIA runtime](https://docs.k3s.io/advanced#nvidia-container-runtime), [NVIDIA toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), [device plugin](https://github.com/NVIDIA/k8s-device-plugin), [uninstaller](https://docs.k3s.io/installation/uninstall).
+- Không sửa SSH/Tailscale/firewall/GPU driver, không sudo cho workloads. `prepare --install-tools --enable-linger` là ngoại lệ có yêu cầu và xác nhận: cài tmux bằng apt nếu thiếu, bật user linger.
+- Strict SSH host key verification; không copy private key hoặc lưu password. JSON mode không mở sudo/prompt.
+- Config/profile/helper/unit ownership guards. Refuse symlink và metadata có duplicate keys. Archive chỉ regular files, tên portable, giới hạn 64 MiB/20k files; không shell-eval argv.
+- Sync bỏ các tên secret thông dụng (.env/key/pem), cache và datasets/checkpoints; **không phải scanner bí mật**. Chỉ sync thư mục code đã kiểm tra. Dữ liệu cũ không tự xóa, chown/chmod.
+- Workloads chạy bằng SSH user, có quyền đọc/ghi file của user đó; không isolation hay resource limits. --gpu chỉ chọn CUDA_VISIBLE_DEVICES. App có thể không tuân theo biến này.
+- Conda install/create/remove yêu cầu xác nhận. Base được bảo vệ khỏi install; env riêng không được remove. CLI chỉ phát hiện env dùng trong jobs/services nó quản lý, không thấy mọi notebook/process riêng.
+- Service bind Tailscale bằng placeholders; listener kiểm tra lúc launch/restart runner. App vẫn có thể mở port khác: dùng code tin cậy. Không tự thêm HTTPS/authentication hoặc tailnet ACL.
+- stop chỉ nhắm process group với PID identity còn khớp; clean chỉ job đã kết thúc và không có runner. Service unit kiểm tra fingerprint trước control/remove. Không động vào tmux/systemd cá nhân.
+- Logs job giữ tối đa khoảng 3×8 MiB, output/code không tự xóa. Conda cache/journal do công cụ tương ứng quản lý. clean sẽ xóa đúng outputs/logs/workspace sau xác nhận; fetch trước.
+- Không có backup/HA/coordinator. Mất disk device có thể mất state/results; ổ local không phải backup.

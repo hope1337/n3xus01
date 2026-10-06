@@ -1,17 +1,15 @@
-# Kiểm chứng trên máy thật
+# Kiểm tra trên máy thật
 
-Thay entry point bằng `.\cluster.ps1` trên Windows. Không có static test nào thay thế được checklist này.
+Offline tests không SSH. Flow thật cần user đã chuẩn bị SSH/Tailscale:
 
-1. `./cluster setup` — host sẵn sàng, chưa kết nối device.
-2. `./cluster add-device home-4090 --address IP --user USER --gpu` — ghi config, provisioning. Driver mới cần reboot thì làm theo thông báo và rerun.
-3. `./cluster check` — node Ready, CPU/network test PASS, CUDA benchmark PASS.
-4. Rerun `./cluster add-device home-4090` — không đổi cluster/node, không reinstall driver, config/service unchanged thì không restart K3s.
-5. `./cluster run home-4090 --image busybox:1.37.0 -- sh -c 'echo persistent > /data/results/proof.txt'` — ghi file trên device bằng UID của bạn. `wait JOB` hoàn thành.
-6. Mở agent và yêu cầu đọc AGENTS.md rồi chạy `test --gpu home-4090`, theo dõi log, báo kết quả.
-7. Khi chấp nhận downtime, tự reboot device. Không chạy setup lại; `status` và `check` vẫn PASS, proof.txt vẫn còn.
-8. Thêm lab worker, `check` kiểm tra HTTP/DNS qua Pod network từ worker tới nginx trên server. GPU worker dùng --gpu và CUDA test nếu có card.
-9. Trên host OS khác, dùng cùng devices.yml rồi rerun add-device server/worker để lấy quyền truy cập và metadata local, `check` PASS. Không copy private key/credential vào Git.
+1. setup → add một device → prepare tmux/linger → status/check/inspect. Không đổi driver/Conda sẵn có.
+2. sync examples/hello → run → wait/logs → fetch. Nội dung hello.txt đúng; exit failed được báo, không giả success.
+3. Gửi một task foreground chạy đủ lâu; tắt host terminal, mở lại jobs/logs, task còn chạy. Stop đúng task; tmux cá nhân giữ nguyên.
+4. Sync revision mới trong khi job cũ chạy: workspace cũ không bị sửa. Job hoàn tất rồi clean sau khi fetch; output đã tải giữ nguyên.
+5. Conda list/inspect env đã có; dùng env với run. Với user approval, plan/install env test hoặc create/remove một managed env. Không chạm base/driver.
+6. GPU: inspect GPU/VRAM; chạy code CUDA/PyTorch đã có bằng --env ENV --gpu 0; xem CUDA device và kết quả computation thật. nvidia-smi alone không chứng minh CUDA training hoạt động.
+7. sync examples/http → serve → service check trả HTTP 200; tắt host vẫn request được từ tailnet; reboot device rồi check lại. Endpoint bind Tailscale, không wildcard. Stop/remove giữ outputs, không đụng service khác.
+8. Host OS switch: cùng devices.json, SSH/key chuẩn bị trên OS mới; setup/status/jobs/services đọc đúng state mà không reprovision.
+9. Thêm device thứ hai: đăng ký/inspect/run độc lập, không join cluster, không cấp SSH key giữa devices.
 
-Chỉ thử reset khi chấp nhận mất workloads/K3s local PV: `reset WORKER --yes-delete-cluster` trước, rồi server. Kiểm tra data_root còn nguyên, setup lại được, worker rejoin không node-password mismatch.
-
-No HA/failover/backup. Máy server hỏng thì cần sửa/dựng lại; test này không chứng minh tự failover.
+Record OS/version, commands, outcomes in validation.md. Không chạy reboot, package mutation hay dọn kết quả nếu user chưa yêu cầu. Repo không tự thao tác device thật trong offline tests.

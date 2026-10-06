@@ -1,2 +1,1 @@
-# Controller: Ubuntu with Python 3.11-3.13; no external Ansible collections.
-ansible-core==2.19.3
+# No pip runtime dependencies. Python 3.10+ standard library only.
