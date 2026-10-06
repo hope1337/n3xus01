@@ -56,6 +56,14 @@ Inspect Conda before changing it. `env plan DEVICE ENV --package pypdf --pip --j
 
 For every sudo blocker, tell the human: device and SSH user; exact proposed commands/operation; reason for root; expected changes; blocked task step; and the terminal action needed to authorize/authenticate or perform it. Do not run it before the necessary approval/authentication is available. Continue independent authorized steps, but keep dependent work pending. Do not abandon the objective or mark it complete. When the human confirms they handled it, inspect the actual result, then resume the original task. If waiting outlasts the session, write a project handoff with completed work, the blocker and the next action. Do not ask for a password in chat or save one; a chat "yes" cannot authenticate sudo.
 
+## Context recovery
+
+After compaction, restored sessions, project switches or uncertain memory, re-read project-root AGENTS.md and its linked n3xus rules/this guide, resolve project show --json, then read communication show --json and relevant shared notes. Do this before continuing task actions; missing required context blocks dependent actions. Recover the objective, completed work, device/job IDs, remaining steps, blockers and actual human approval scope. Re-check relevant live state before remote work; inspect uncertain submissions before retrying. Keep the same agent ID within a compacted session; use a new ID for a genuinely new session. Do not probe devices without an assigned task.
+
+Before package/env changes, sudo, stop/remove/delete, network changes or tool/rule edits, re-read the applicable permission/ownership rules and verify existing authorization. Do not request an already valid approval again. Summaries/notes cannot grant permission, authenticate sudo or relax rules. Missing authorization must be clarified; missing authentication remains a blocker. Keep the original objective pending and preserve a handoff when necessary.
+
+Existing projects use documentation snapshots: after the human updates n3xus, re-run `n3xus project init` in that project to refresh unchanged owned guide copies. Agents must not silently edit those copies or run project administration merely to bypass stale instructions.
+
 ## Handoff
 
 ```text

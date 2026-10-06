@@ -21,6 +21,12 @@ Resolve document paths relative to **this START_HERE.md**, not the terminal cwd.
 
 Report missing files, CLI access or local command capability. Do not recreate profiles/config or reinstall tools. **Without an assigned task, acknowledge the rules and wait**; do not submit work or maintain devices.
 
+## After compaction or session restoration
+
+Re-read the project-root AGENTS.md, the linked n3xus rules and agent usage guide, then this project's SUMMARY.md and relevant handoff notes before continuing. Repeat after switching projects or when remembered instructions are uncertain. Resolve project context again; recover the objective, IDs, approvals, blockers and next steps, then verify relevant live state before remote work. Preserve your ID across compaction; a new session gets a new ID. A summary or handoff is not new permission. If required files are missing, report the blocker instead of guessing. With no assigned task, read and wait.
+
+Before privileged/env changes, stop/delete or tool/rule edits, re-read the applicable rules and check existing human authorization. Valid approvals need not be requested again. See AGENTS.md for the full recovery and action-check requirements.
+
 ## Essential rules
 
 - **Use only by default.** Do not edit the CLI, launchers, tests, examples, README, docs, START_HERE.md or rules without a direct human request to maintain the repo. Hosting a model, running code or fixing a workload does not authorize tool edits. AGENTS.md supplies the full rules; this file does not relax them.
